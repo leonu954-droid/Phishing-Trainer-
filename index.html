@@ -1,0 +1,2998 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Phishing-Trainer (Copy)</title>
+<meta name="description" content="Interaktiver Lerntrainer: Phishing-Nachrichten und verdächtige Links erkennen. Schulprojekt – alle Beispiele sind erfunden.">
+<style>
+  :root {
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    color-scheme: dark light;
+  }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  html, body { margin: 0; min-height: 100%; }
+  body { background: #0c1220; }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) body { background: #eef0f5; }
+  }
+  :root[data-theme="light"] body { background: #eef0f5; }
+  :root[data-theme="dark"] body { background: #0c1220; }
+  body .pt-root { min-height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); }
+  body .pt-root .pt-overlay {
+    padding-top: calc(20px + env(safe-area-inset-top, 0px));
+    padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  }
+  #laden { font: 14px system-ui, sans-serif; color: #8d97b4; padding: 40px 20px; text-align: center; }
+</style>
+</head>
+<body>
+<div id="root"><p id="laden">Phishing-Trainer wird geladen …</p></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script>
+ function _nullishCoalesce(lhs, rhsFn) { if (lhs != null) { return lhs; } else { return rhsFn(); } } function _optionalChain(ops) { let lastAccessLHS = undefined; let value = ops[0]; let i = 1; while (i < ops.length) { const op = ops[i]; const fn = ops[i + 1]; i += 2; if ((op === 'optionalAccess' || op === 'optionalCall') && value == null) { return undefined; } if (op === 'access' || op === 'optionalAccess') { lastAccessLHS = value; value = fn(value); } else if (op === 'call' || op === 'optionalCall') { value = fn((...args) => value.call(lastAccessLHS, ...args)); lastAccessLHS = undefined; } } return value; }const { useState, useMemo } = React;
+
+/* ============================================================
+   PHISHING-TRAINER
+   Datenbasis: 20 komplett fiktive Beispielnachrichten.
+   Alle Namen, Firmen, Adressen, Domains und Nummern erfunden.
+   ============================================================ */
+
+const KATEGORIEN = {
+  absender: {
+    name: "Gefälschte Absenderadresse",
+    kurz: "Der Anzeigename stimmt, die Domain dahinter nicht.",
+  },
+  anrede: {
+    name: "Unpersönliche Anrede",
+    kurz: "„Sehr geehrter Kunde“ – der Absender kennt deinen Namen nicht.",
+  },
+  sprache: {
+    name: "Sprach- und Formfehler",
+    kurz: "Tippfehler, holprige Sätze, falsche Abstände.",
+  },
+  druck: {
+    name: "Zeitdruck & Drohung",
+    kurz: "Fristen, Sperrungen, Kosten – du sollst nicht nachdenken.",
+  },
+  link: {
+    name: "Verdächtiger Link",
+    kurz: "Die echte Domain steht immer direkt vor dem ersten „/“.",
+  },
+  daten: {
+    name: "Abfrage sensibler Daten",
+    kurz: "Passwort, TAN, Ausweis, Bankdaten – niemals per Nachricht.",
+  },
+  anhang: {
+    name: "Gefährlicher Anhang",
+    kurz: "Doppelte Endungen und ausführbare Dateien.",
+  },
+  kontext: {
+    name: "Unerwarteter Kontext",
+    kurz: "Du hast nichts bestellt, geteilt oder angefragt.",
+  },
+  rueckkanal: {
+    name: "Kein echter Rückkanal",
+    kurz: "Kontaktdaten stammen aus der Nachricht selbst.",
+  },
+  koeder: {
+    name: "Zu gutes Angebot",
+    kurz: "Gewinne und Geschenke, die niemand ausgelobt hat.",
+  },
+  protokoll: {
+    name: "Unverschlüsselte Verbindung",
+    kurz: "http:// statt https:// – alles wird im Klartext übertragen.",
+  },
+  subdomain: {
+    name: "Domain-Spoofing per Subdomain",
+    kurz: "paypal.com.irgendwas.net – die echte Domain steht ganz hinten.",
+  },
+  tld: {
+    name: "Auffällige Domain-Endung",
+    kurz: "Kostenlose Endungen wie .tk, .top oder .cc sind bei Betrügern beliebt.",
+  },
+  kurzlink: {
+    name: "Verkürzter Link",
+    kurz: "Das eigentliche Ziel ist unsichtbar, bis du geklickt hast.",
+  },
+  tracker: {
+    name: "Versteckter Tracking-Link",
+    kurz: "Leitet weiter und protokolliert dabei IP-Adresse, Gerät und Standort-Region.",
+  },
+  homoglyph: {
+    name: "Verwechselbare Zeichen",
+    kurz: "Fremde Buchstaben oder Ziffern, die wie lateinische aussehen.",
+  },
+  dateiendung: {
+    name: "Ungewöhnliche Dateiendung",
+    kurz: "Der Link lädt ein Programm herunter, kein Dokument.",
+  },
+  qr: {
+    name: "QR-Code als Versteck",
+    kurz: "Im Code steckt eine Adresse, die du vor dem Scannen nicht siehst.",
+  },
+  weiterleitung: {
+    name: "Offene Weiterleitung",
+    kurz: "Echte Domain am Anfang, das eigentliche Ziel steht im Parameter.",
+  },
+};
+
+const NACHRICHTEN = [
+  /* ---------- STUFE 1 – LEICHT ---------- */
+  {
+    id: 1,
+    stufe: 1,
+    kanal: "email",
+    phishing: true,
+    von: { name: "Sparkasse Sicherheitsteam", adresse: "sicherheit@sparkase-kundenschutz.tk" },
+    betreff: "Ihr Konto wurde vorübergehend gesperrt!!",
+    zeit: "Heute, 03:47",
+    text: `Sehr geehrter Kunde,
+
+wir haben ungewöhnliche Aktivitäten auf Ihrem Konto festgestelt. Aus Sicherheitsgründen wurde Ihr Zugang vorerst gesperrt.
+
+Bitte bestätigen Sie Ihre Daten innerhalb von 24 Stunden, andernfalls wird Ihr Konto dauerhaft geschlossen.
+
+http://sparkasse-kundenportal.verify-login.tk/anmelden
+
+Mit freundlichen Grüßen
+Ihr Sicherheitsteam`,
+    merkmale: [
+      { feld: "von", kat: "absender", text: "Im Namen fehlt ein „s“ (sparkase), und die Endung .tk gehört keiner deutschen Bank." },
+      { marker: "Sehr geehrter Kunde", kat: "anrede", text: "Deine Bank kennt deinen Namen und benutzt ihn auch." },
+      { marker: "festgestelt", kat: "sprache", text: "Tippfehler. In echten Massenmails eines Kreditinstituts extrem selten." },
+      { marker: "innerhalb von 24 Stunden", kat: "druck", text: "Eine künstliche Frist soll verhindern, dass du in Ruhe nachfragst." },
+      { marker: "http://sparkasse-kundenportal.verify-login.tk/anmelden", kat: "link", text: "Die echte Domain ist verify-login.tk – alles davor ist frei erfundene Deko." },
+    ],
+    fazit: "Klassisches Massen-Phishing: falsche Domain, Zeitdruck, Rechtschreibfehler. Banken sperren Konten nie per E-Mail-Link.",
+  },
+  {
+    id: 2,
+    stufe: 1,
+    kanal: "email",
+    phishing: false,
+    von: { name: "Buchhandlung Seitenwind", adresse: "bestellung@seitenwind-buch.de" },
+    betreff: "Deine Bestellung SW-48219 ist unterwegs",
+    zeit: "Gestern, 16:12",
+    text: `Hallo Max,
+
+deine Bestellung SW-48219 vom 12. August hat unser Lager verlassen.
+
+Enthalten: 1x „Grundlagen der Netzwerktechnik“, 1x Notizbuch A5
+
+Den Sendungsstatus findest du jederzeit in deinem Kundenkonto auf seitenwind-buch.de.
+
+Viele Grüße
+Team Seitenwind`,
+    merkmale: [
+      { feld: "von", kat: "absender", gut: true, text: "Die Domain gehört zum Absendernamen, keine Zusätze, keine Zahlendreher." },
+      { marker: "Hallo Max", kat: "anrede", gut: true, text: "Persönliche Anrede – der Absender hat ein Konto zu dir." },
+      { marker: "SW-48219", kat: "kontext", gut: true, text: "Konkrete Bestellnummer, die du selbst in deinem Konto nachschlagen kannst." },
+      { marker: "in deinem Kundenkonto auf seitenwind-buch.de", kat: "link", gut: true, text: "Kein Login-Link. Du sollst selbst zur Seite gehen – genau richtig." },
+    ],
+    fazit: "Echt. Erwarteter Kontext, persönliche Anrede, keine Datenabfrage, kein Handlungsdruck.",
+  },
+  {
+    id: 3,
+    stufe: 1,
+    kanal: "sms",
+    phishing: true,
+    von: { name: "+49 1573 0028841" },
+    zeit: "Heute, 11:02",
+    text: `IhrPaket konnte nicht zugestellt werden. Bitte begleichen Sie die offenen Zollgebühren von 1,99 EUR: http://dhl-paket.info-tracking.top/de`,
+    merkmale: [
+      { marker: "IhrPaket", kat: "sprache", text: "Fehlendes Leerzeichen – Massenware aus einem Baukasten." },
+      { marker: "Zollgebühren", kat: "kontext", text: "Für Sendungen innerhalb Deutschlands gibt es keine Zollgebühren." },
+      { marker: "1,99 EUR", kat: "koeder", text: "Der Minibetrag senkt die Hemmschwelle. Es geht nicht um die 1,99 €, sondern um deine Kartendaten." },
+      { marker: "http://dhl-paket.info-tracking.top/de", kat: "link", text: "Die echte Domain ist info-tracking.top. Kein Paketdienst nutzt so etwas." },
+    ],
+    fazit: "Paket-SMS sind der häufigste Phishing-Typ überhaupt. Sendungsstatus immer in der App des Dienstes prüfen.",
+  },
+  {
+    id: 4,
+    stufe: 1,
+    kanal: "sms",
+    phishing: false,
+    von: { name: "+49 30 44219087" },
+    zeit: "Heute, 09:15",
+    text: `Praxis Dr. Kellermann: Erinnerung an Ihren Termin am Do, 21.08. um 14:30 Uhr. Absage bitte telefonisch unter 030 44219087. Bis bald!`,
+    merkmale: [
+      { marker: "Erinnerung an Ihren Termin am Do, 21.08. um 14:30 Uhr", kat: "kontext", gut: true, text: "Konkreter Termin, den du selbst vereinbart hast." },
+      { marker: "telefonisch unter 030 44219087", kat: "rueckkanal", gut: true, text: "Die Rückrufnummer entspricht der Absendernummer und steht auch im Telefonbuch." },
+    ],
+    fazit: "Echt. Kein Link, keine Datenabfrage, kein Druck – nur eine Information.",
+  },
+  {
+    id: 5,
+    stufe: 1,
+    kanal: "email",
+    phishing: true,
+    von: { name: "Euro-Lotto Zentrale", adresse: "auszahlung@euromillion-payout.info" },
+    betreff: "HERZLICHEN GLÜCKWUNSCH SIE HABEN GEWONNEN",
+    zeit: "Heute, 02:19",
+    text: `Lieber Gewinner,
+
+Ihre E-Mail Adresse wurde in unserer internationalen Ziehung ausgewählt. Sie haben 950.000,00 EUR gewonen!
+
+Um den Betrag zu erhalten senden Sie uns bitte umgehend Ihren vollständigen Namen, Ihre Ausweisnummer und Ihre Bankverbindung.
+
+Diese Nachricht ist streng vertraulich. Teilen Sie sie mit niemandem.
+
+Mit besten Grüßen
+Auszahlungsabteilung`,
+    merkmale: [
+      { feld: "von", kat: "absender", text: "Eine erfundene Domain ohne Bezug zu einer real existierenden Lotterie." },
+      { marker: "Lieber Gewinner", kat: "anrede", text: "Kein Name – dieselbe Mail ging an zehntausend Adressen." },
+      { marker: "gewonen", kat: "sprache", text: "Tippfehler mitten in der Kernaussage." },
+      { marker: "Ihre Ausweisnummer und Ihre Bankverbindung", kat: "daten", text: "Für eine Auszahlung braucht niemand deine Ausweisnummer per E-Mail." },
+      { marker: "Teilen Sie sie mit niemandem", kat: "druck", text: "Geheimhaltung soll verhindern, dass jemand dich warnt." },
+      { marker: "950.000,00 EUR", kat: "koeder", text: "An Gewinnspielen, an denen du nie teilgenommen hast, kannst du auch nicht gewinnen." },
+    ],
+    fazit: "Vorschussbetrug. Später folgt eine „Bearbeitungsgebühr“, die du überweisen sollst.",
+  },
+  {
+    id: 6,
+    stufe: 1,
+    kanal: "chat",
+    phishing: false,
+    von: { name: "Mira – Klassenchat 10b" },
+    zeit: "Heute, 17:40",
+    text: `Hey, weißt du zufällig noch, was wir in Mathe aufhaben? Ich hab die Seitenzahl nicht mitbekommen 😅`,
+    merkmale: [
+      { marker: "was wir in Mathe aufhaben", kat: "kontext", gut: true, text: "Normaler Gesprächsinhalt aus einem bestehenden Chat." },
+      { marker: "Seitenzahl", kat: "daten", gut: true, text: "Es werden keinerlei sensible Daten gefragt." },
+    ],
+    fazit: "Echt. Kein Link, keine Forderung, bekannter Kontakt.",
+  },
+
+  /* ---------- STUFE 2 – MITTEL ---------- */
+  {
+    id: 7,
+    stufe: 2,
+    kanal: "email",
+    phishing: true,
+    von: { name: "Microsoft Konto-Team", adresse: "no-reply@ms-account-security.com" },
+    betreff: "Ihr Passwort läuft in 24 Stunden ab",
+    zeit: "Heute, 08:31",
+    text: `Guten Tag,
+
+das Passwort für Ihr Konto max.m@schule-musterstadt.de läuft am 19.08.2026 ab. Ohne Verlängerung verlieren Sie den Zugriff auf Ihre Dateien und E-Mails.
+
+Passwort jetzt behalten:
+https://login.microsoftonline.ms-account-security.com/verify
+
+Microsoft Konto-Team`,
+    merkmale: [
+      { feld: "von", kat: "absender", text: "ms-account-security.com gehört nicht zu Microsoft, klingt aber offiziell." },
+      { marker: "https://login.microsoftonline.ms-account-security.com/verify", kat: "link", text: "Trick: „login.microsoftonline“ ist nur eine Subdomain. Die echte Domain steht direkt vor dem ersten „/“." },
+      { marker: "verlieren Sie den Zugriff", kat: "druck", text: "Verlustdrohung statt sachlicher Information." },
+      { marker: "Passwort jetzt behalten", kat: "sprache", text: "Ungewöhnliche Formulierung – wirkt übersetzt." },
+    ],
+    fazit: "Deine E-Mail-Adresse zu kennen ist kein Echtheitsbeweis – die steht in vielen geleakten Listen.",
+  },
+  {
+    id: 8,
+    stufe: 2,
+    kanal: "email",
+    phishing: false,
+    von: { name: "Bitmagazin Newsletter", adresse: "newsletter@bitmagazin.de" },
+    betreff: "Wochenrückblick: Neue Sicherheitslücke in Routern",
+    zeit: "Freitag, 07:00",
+    text: `Hallo Max,
+
+hier die wichtigsten Themen der Woche:
+
+• Router-Update schließt kritische Lücke
+• Was der neue Datenschutz-Entwurf bedeutet
+• Test: fünf Passwort-Manager im Vergleich
+
+Zum vollständigen Rückblick: https://bitmagazin.de/newsletter/2026-33
+
+Du erhältst diese E-Mail, weil du dich am 04.03.2025 angemeldet hast. Abmelden: https://bitmagazin.de/abmelden`,
+    merkmale: [
+      { feld: "von", kat: "absender", gut: true, text: "Absenderdomain und Linkdomain sind identisch: bitmagazin.de." },
+      { marker: "https://bitmagazin.de/newsletter/2026-33", kat: "link", gut: true, text: "Direkte Domain ohne Zusätze oder Weiterleitungsdienst." },
+      { marker: "weil du dich am 04.03.2025 angemeldet hast", kat: "kontext", gut: true, text: "Nachvollziehbarer Grund für den Versand." },
+      { marker: "Abmelden", kat: "kontext", gut: true, text: "Seriöse Newsletter haben immer einen Abmeldelink." },
+    ],
+    fazit: "Echt. Werbung ist nicht automatisch Phishing – entscheidend ist, ob Daten abgefragt werden.",
+  },
+  {
+    id: 9,
+    stufe: 2,
+    kanal: "sms",
+    phishing: true,
+    von: { name: "Nordbank-Info" },
+    zeit: "Heute, 19:58",
+    text: `Von Ihrem Konto wurde eine Zahlung über 749,00 EUR an ELEC-STORE UK autorisiert. Waren Sie das nicht? Melden Sie sich sofort bei unserem Sicherheitsteam: 0800 3319047`,
+    merkmale: [
+      { feld: "von", kat: "absender", text: "Alphanumerische SMS-Absender lassen sich fälschen. Die Nachricht landet dann sogar im echten Bank-Verlauf." },
+      { marker: "749,00 EUR", kat: "druck", text: "Der Schockbetrag soll Panik auslösen und das Nachdenken abkürzen." },
+      { marker: "Melden Sie sich sofort", kat: "druck", text: "Sofort-Aufforderung ohne Bedenkzeit." },
+      { marker: "0800 3319047", kat: "rueckkanal", text: "Die Nummer stammt aus der Nachricht selbst. Am Telefon wird dann nach TAN oder Fernwartung gefragt." },
+    ],
+    fazit: "Vishing – Phishing per Rückruf. Immer die Nummer von der eigenen Bankkarte wählen, nie die aus der Nachricht.",
+  },
+  {
+    id: 10,
+    stufe: 2,
+    kanal: "email",
+    phishing: false,
+    von: { name: "C. Hoffmann", adresse: "c.hoffmann@schule-musterstadt.de" },
+    betreff: "Wandertag 25.08. – Infos und Rückmeldezettel",
+    zeit: "Montag, 14:22",
+    anhang: "Rueckmeldung_Wandertag.pdf",
+    text: `Liebe Klasse 10b,
+
+am 25.08. geht es um 8:00 Uhr los, Treffpunkt ist der Bahnhof Nordseite. Bitte gebt den Rückmeldezettel im Anhang unterschrieben bis Freitag bei mir ab.
+
+Wetterfeste Kleidung nicht vergessen.
+
+Viele Grüße
+C. Hoffmann`,
+    merkmale: [
+      { feld: "von", kat: "absender", gut: true, text: "Offizielle Schul-Domain, Name passt zur Lehrkraft." },
+      { feld: "anhang", kat: "anhang", gut: true, text: "Einfache PDF-Endung, passend zum angekündigten Inhalt." },
+      { marker: "am 25.08. geht es um 8:00 Uhr los", kat: "kontext", gut: true, text: "Angekündigter, erwarteter Vorgang." },
+      { marker: "bei mir ab", kat: "daten", gut: true, text: "Die Rückgabe passiert offline – keine Eingabe von Daten irgendwo." },
+    ],
+    fazit: "Echt. Anhänge sind nicht per se gefährlich – der Kontext entscheidet.",
+  },
+  {
+    id: 11,
+    stufe: 2,
+    kanal: "chat",
+    phishing: true,
+    von: { name: "Unbekannt (+49 1522 8830145)" },
+    zeit: "Heute, 20:11",
+    text: `Hallo Mama, mein altes Handy ist kaputt gegangen. Das hier ist meine neue Nummer, speicher sie bitte ein 😊
+
+Kannst du mir kurz helfen? Ich müsste dringend eine Rechnung überweisen, komme aber mit dem neuen Gerät noch nicht ins Online-Banking. Ich schicke dir gleich die Daten.`,
+    merkmale: [
+      { feld: "von", kat: "rueckkanal", text: "Unbekannte Nummer. Der Angreifer hofft, dass niemand die alte Nummer anruft." },
+      { marker: "meine neue Nummer", kat: "kontext", text: "Der Nummernwechsel ist der ganze Trick: Er erklärt, warum die Stimme fehlt." },
+      { marker: "dringend", kat: "druck", text: "Zeitdruck verhindert Rückfragen bei anderen Familienmitgliedern." },
+      { marker: "eine Rechnung überweisen", kat: "daten", text: "Am Ende steht immer eine Geldforderung." },
+    ],
+    fazit: "Der „Hallo Mama“-Trick. Gegenmittel: die alte Nummer anrufen oder eine Frage stellen, die nur die echte Person beantworten kann.",
+  },
+  {
+    id: 12,
+    stufe: 2,
+    kanal: "email",
+    phishing: false,
+    von: { name: "Flimmerbox", adresse: "service@flimmerbox.de" },
+    betreff: "Deine Rechnung für August",
+    zeit: "01.08., 06:30",
+    text: `Hallo Max,
+
+deine Abrechnung für August über 8,99 EUR ist fertig. Du findest sie unter „Konto → Rechnungen“, wenn du dich in der App oder auf flimmerbox.de anmeldest.
+
+Wir bitten dich niemals per E-Mail um dein Passwort oder deine Zahlungsdaten.
+
+Dein Flimmerbox-Team`,
+    merkmale: [
+      { feld: "von", kat: "absender", gut: true, text: "Domain passt zum Dienst, den du tatsächlich abonniert hast." },
+      { marker: "wenn du dich in der App oder auf flimmerbox.de anmeldest", kat: "link", gut: true, text: "Kein Login-Link. Du gehst selbst hin – der sicherste Weg." },
+      { marker: "niemals per E-Mail um dein Passwort", kat: "daten", gut: true, text: "Seriöse Anbieter sagen aktiv, was sie nie tun werden." },
+    ],
+    fazit: "Echt. Der stärkste Hinweis: Die Mail will dich gar nicht irgendwo hin klicken lassen.",
+  },
+  {
+    id: 13,
+    stufe: 2,
+    kanal: "email",
+    phishing: true,
+    von: { name: "Skyfall Craft Support", adresse: "support@skyfallcraft-security.net" },
+    betreff: "Meldung wegen Regelverstoß – Account wird in 48h gesperrt",
+    zeit: "Heute, 22:04",
+    text: `Hallo Spieler,
+
+gegen deinen Account wurde eine Meldung wegen Nutzung unerlaubter Modifikationen eingereicht.
+
+Wenn du glaubst, dass dies ein Fehler ist, verifiziere deinen Account innerhalb von 48 Stunden über unser Einspruchsformular:
+
+https://skyfallcraft-security.net/einspruch?id=8871
+
+Bei Nichtbeachtung wird der Account dauerhaft gelöscht.`,
+    merkmale: [
+      { feld: "von", kat: "absender", text: "Der Zusatz „-security.net“ ist nicht die offizielle Domain des Anbieters." },
+      { marker: "Hallo Spieler", kat: "anrede", text: "Dein Spielername ist dem Anbieter bekannt – hier fehlt er." },
+      { marker: "innerhalb von 48 Stunden", kat: "druck", text: "Frist plus Verlustdrohung, die klassische Kombination." },
+      { marker: "verifiziere deinen Account", kat: "daten", text: "„Verifizieren“ heißt hier: Zugangsdaten auf einer fremden Seite eingeben." },
+    ],
+    fazit: "Gaming-Accounts sind beliebte Ziele. Sperren und Einsprüche laufen immer über die offizielle Website, nie über einen Mail-Link.",
+  },
+
+  /* ---------- STUFE 3 – SCHWER ---------- */
+  {
+    id: 14,
+    stufe: 3,
+    kanal: "email",
+    phishing: true,
+    von: { name: "Sekretariat Schule Musterstadt", adresse: "sekretariat@schule-musterstadt-de.net" },
+    betreff: "Zugang zum neuen Schulportal – bitte bis Mittwoch einrichten",
+    zeit: "Heute, 10:05",
+    text: `Hallo Max,
+
+wie in der letzten Klassenleiterstunde angekündigt, stellen wir die Vertretungspläne ab September auf das neue Schulportal um.
+
+Damit dein Zugang rechtzeitig freigeschaltet ist, melde dich bitte einmal mit deinen gewohnten Schul-Zugangsdaten an:
+
+https://schule-musterstadt-de.net/portal/login
+
+Bei Fragen meldest du dich einfach im Sekretariat.
+
+Freundliche Grüße
+J. Wendt, Sekretariat`,
+    merkmale: [
+      { feld: "von", kat: "absender", text: "Aus dem Punkt wurde ein Bindestrich: schule-musterstadt-de.net statt schule-musterstadt.de. Eine völlig fremde Domain." },
+      { marker: "wie in der letzten Klassenleiterstunde angekündigt", kat: "kontext", text: "Spear-Phishing: Der Angreifer kennt Interna, etwa aus einem öffentlichen Elternbrief." },
+      { marker: "mit deinen gewohnten Schul-Zugangsdaten an", kat: "daten", text: "Genau das Ziel: dein echtes Schulpasswort auf einer nachgebauten Seite." },
+      { marker: "rechtzeitig freigeschaltet", kat: "druck", text: "Sanfter, dadurch unauffälliger Zeitdruck." },
+    ],
+    fazit: "Kein Rechtschreibfehler, korrekter Ton, echter Kontext. Der einzige harte Beweis ist die Domain – deshalb immer zuerst dorthin schauen.",
+  },
+  {
+    id: 15,
+    stufe: 3,
+    kanal: "email",
+    phishing: false,
+    von: { name: "IT-Administration Schule Musterstadt", adresse: "it@schule-musterstadt.de" },
+    betreff: "Wartungsarbeiten Donnerstag: WLAN und Drucker zeitweise nicht erreichbar",
+    zeit: "Heute, 12:40",
+    text: `Liebe Schülerinnen und Schüler, liebe Kolleginnen und Kollegen,
+
+am Donnerstag, 20.08., zwischen 7:00 und 10:00 Uhr aktualisieren wir die Netzwerktechnik. In dieser Zeit sind WLAN, Drucker und das Notenprogramm nicht erreichbar.
+
+Ihr müsst nichts tun. Wir werden euch in diesem Zusammenhang nie nach eurem Passwort fragen.
+
+Bei Problemen nach 10 Uhr: Raum 014 oder Durchwahl 27.
+
+M. Braun, IT-Administration`,
+    merkmale: [
+      { feld: "von", kat: "absender", gut: true, text: "Korrekte Schul-Domain mit Punkt vor der Endung." },
+      { marker: "Ihr müsst nichts tun", kat: "druck", gut: true, text: "Keine Handlungsaufforderung, kein Link, keine Frist." },
+      { marker: "nie nach eurem Passwort fragen", kat: "daten", gut: true, text: "Aktiver Hinweis darauf, was die IT niemals tun wird." },
+      { marker: "Raum 014 oder Durchwahl 27", kat: "rueckkanal", gut: true, text: "Interner, überprüfbarer Rückkanal statt einer Nummer aus der Mail." },
+    ],
+    fazit: "Echt – und ein wichtiger Testfall: Ein technisch klingendes, leicht dringliches Thema ist für sich genommen kein Phishing-Merkmal.",
+  },
+  {
+    id: 16,
+    stufe: 3,
+    kanal: "email",
+    phishing: true,
+    von: { name: "Tim Reuter", adresse: "tim.reuter@schule-musterstadt.de" },
+    antwortAn: "tim.reuter.extern@mail-relay-service.com",
+    betreff: "Re: Serverumzug – kurze Frage",
+    zeit: "Heute, 18:26",
+    text: `Hi Max,
+
+ich sitze gerade am Umzug des Projektservers und komme nicht mehr in den Admin-Bereich rein. Mein Zugang scheint abgelaufen zu sein.
+
+Kannst du mir schnell dein Passwort für das Panel schicken? Ich mach das gleich fertig und setze es danach wieder zurück. Bin unterwegs, deshalb per Mail und nicht über den üblichen Kanal.
+
+Danke dir!
+Tim`,
+    merkmale: [
+      { feld: "antwortAn", kat: "absender", text: "Der Absender sieht echt aus, aber jede Antwort geht an eine völlig fremde Adresse. Dieses Feld ist oft ausgeklappt versteckt." },
+      { marker: "dein Passwort für das Panel schicken", kat: "daten", text: "Passwörter werden nie per Nachricht weitergegeben – auch nicht an Bekannte." },
+      { marker: "Bin unterwegs, deshalb per Mail und nicht über den üblichen Kanal", kat: "rueckkanal", text: "Vorgeschobene Erklärung, warum der gewohnte Weg gerade nicht geht." },
+      { marker: "schnell", kat: "druck", text: "Kleiner Gefallen, sofort – so umgeht man Misstrauen unter Kollegen." },
+    ],
+    fazit: "Absenderadressen lassen sich fälschen. Bei jeder Anfrage nach Zugangsdaten: über einen bekannten Kanal zurückfragen, etwa anrufen.",
+  },
+  {
+    id: 17,
+    stufe: 3,
+    kanal: "sms",
+    phishing: false,
+    von: { name: "Nordbank" },
+    zeit: "Heute, 15:03",
+    text: `Ihr Bestätigungscode lautet 481 902. Gültig für 5 Minuten. Wir fragen diesen Code niemals telefonisch oder per Nachricht ab.`,
+    merkmale: [
+      { marker: "Wir fragen diesen Code niemals telefonisch oder per Nachricht ab", kat: "daten", gut: true, text: "Genau die Warnung, die eine echte Bank mitschickt." },
+      { marker: "Gültig für 5 Minuten", kat: "kontext", gut: true, text: "Reine Information, keine Aufforderung, irgendwo zu klicken." },
+    ],
+    fazit: "Echt – aber nur, wenn du die Anmeldung selbst ausgelöst hast. Kommt so ein Code unerwartet, ist das ein Alarmsignal: Dann versucht gerade jemand anderes, sich einzuloggen.",
+  },
+  {
+    id: 18,
+    stufe: 3,
+    kanal: "email",
+    phishing: true,
+    von: { name: "Bürobedarf Kraus GmbH", adresse: "buchhaltung@bueroberdarf-kraus.de" },
+    betreff: "Offene Rechnung 2026-4471 – 2. Mahnung",
+    zeit: "Heute, 09:48",
+    anhang: "Rechnung_2026-4471.pdf.exe",
+    text: `Sehr geehrte Damen und Herren,
+
+trotz mehrfacher Erinnerung ist die Rechnung 2026-4471 über 348,20 EUR weiterhin offen.
+
+Die Einzelheiten entnehmen Sie bitte dem Anhang. Sollte der Betrag nicht innerhalb von 5 Werktagen eingehen, geben wir den Vorgang an unser Inkassobüro ab.
+
+Mit freundlichen Grüßen
+F. Kraus`,
+    merkmale: [
+      { feld: "anhang", kat: "anhang", text: "Doppelte Endung: Die Datei endet auf .exe, ist also ein Programm – kein Dokument." },
+      { feld: "von", kat: "absender", text: "Buchstabendreher in der Domain: „bueroberdarf“ statt „buerobedarf“." },
+      { marker: "trotz mehrfacher Erinnerung", kat: "kontext", text: "Behauptete Vorgeschichte, die es nie gab. Soll Verunsicherung erzeugen." },
+      { marker: "an unser Inkassobüro ab", kat: "druck", text: "Drohkulisse, damit du den Anhang öffnest, statt nachzudenken." },
+    ],
+    fazit: "Der häufigste Weg, wie Schadsoftware auf Rechner kommt. Dateiendungen im Explorer einblenden – dann fällt .pdf.exe sofort auf.",
+  },
+  {
+    id: 19,
+    stufe: 3,
+    kanal: "chat",
+    phishing: false,
+    von: { name: "Herr Aydin – Praktikum Nordwerk IT" },
+    zeit: "Freitag, 13:20",
+    text: `Hallo Max, hier wie besprochen die Unterlagen zur Einführungswoche: https://nordwerk-it.de/praktikum/onboarding
+
+Falls der Login nicht klappt, ruf einfach in der Zentrale an, die Nummer hast du ja. Bis Montag!`,
+    merkmale: [
+      { marker: "wie besprochen", kat: "kontext", gut: true, text: "Angekündigter Inhalt aus einem laufenden Gespräch." },
+      { marker: "https://nordwerk-it.de/praktikum/onboarding", kat: "link", gut: true, text: "Domain der bekannten Firma, ohne Zusätze vor der Endung." },
+      { marker: "ruf einfach in der Zentrale an, die Nummer hast du ja", kat: "rueckkanal", gut: true, text: "Verweist auf einen Kontaktweg, den du bereits unabhängig kennst." },
+    ],
+    fazit: "Echt. Ein Link ist kein Warnsignal – ein unerwarteter Link auf eine unbekannte Domain schon.",
+  },
+  {
+    id: 20,
+    stufe: 3,
+    kanal: "email",
+    phishing: true,
+    von: { name: "Anna Weiß (über Dokumente)", adresse: "no-reply@doc-share-cloud.com" },
+    betreff: "Anna Weiß hat „Notenuebersicht_10b.xlsx“ mit dir geteilt",
+    zeit: "Heute, 21:37",
+    text: `Anna Weiß hat ein Dokument mit dir geteilt.
+
+Notenuebersicht_10b.xlsx
+
+Dokument öffnen:
+https://doc-share-cloud.com/open?d=4f91
+
+Dieses Dokument ist bis zum 22.08.2026 verfügbar. Danach wird der Zugriff automatisch entfernt.`,
+    merkmale: [
+      { feld: "von", kat: "absender", text: "Ein Freigabedienst, den weder du noch die Schule benutzt." },
+      { marker: "Notenuebersicht_10b.xlsx", kat: "koeder", text: "Neugier als Köder. Der Dateiname ist der eigentliche Angriff." },
+      { marker: "https://doc-share-cloud.com/open?d=4f91", kat: "link", text: "Der Link führt auf eine nachgebaute Anmeldemaske, die Zugangsdaten mitschneidet." },
+      { marker: "bis zum 22.08.2026 verfügbar", kat: "druck", text: "Künstliche Verknappung, damit du sofort klickst." },
+    ],
+    fazit: "Sprachlich fehlerfrei, kein Tippfehler, keine Drohung. Verräterisch ist allein der Kontext: eine unerwartete Freigabe über einen fremden Dienst.",
+  },
+
+  /* ---------- ERWEITERUNG: STUFE 1 ---------- */
+  {
+    id: 21,
+    stufe: 1,
+    kanal: "email",
+    phishing: true,
+    von: { name: "Flimmerbox Kundenservice", adresse: "service@flimmerbox-kundenservice.info" },
+    betreff: "Zahlung fehlgeschlagen – Abo wird heute deaktiviert",
+    zeit: "Heute, 01:12",
+    text: `Sehr geehrter Nutzer,
+
+die Abbuchung für Ihr Abonement konnte nicht durchgeführt werden.
+
+Aktualisieren Sie Ihre Zahlungsdaten noch heute, sonst wird Ihr Zugang deaktiviert:
+
+http://flimmerbox-kundenservice.info/zahlung
+
+Ihr Kundenservice`,
+    merkmale: [
+      { feld: "von", kat: "absender", text: "Die echte Domain ist flimmerbox.de. Ein angehängtes „-kundenservice.info“ macht daraus eine fremde Adresse." },
+      { marker: "Sehr geehrter Nutzer", kat: "anrede", text: "Ein Streamingdienst kennt deinen Namen – er steht im Konto." },
+      { marker: "Abonement", kat: "sprache", text: "Fehlende Doppelkonsonanten sind ein klassischer Übersetzungsfehler." },
+      { marker: "noch heute", kat: "druck", text: "Tagesfrist mitten in der Nacht verschickt – Druck statt Service." },
+    ],
+    fazit: "Vergleiche diese Mail mit der echten Flimmerbox-Rechnung weiter vorn: Die echte verlinkt nichts und fragt nichts ab.",
+  },
+  {
+    id: 22,
+    stufe: 1,
+    kanal: "email",
+    phishing: false,
+    von: { name: "Wissenbox", adresse: "noreply@wissenbox.de" },
+    betreff: "Passwort zurücksetzen",
+    zeit: "Heute, 16:58",
+    text: `Hallo Max,
+
+du hast gerade angefordert, dein Passwort zurückzusetzen. Der Link ist 30 Minuten gültig:
+
+https://wissenbox.de/passwort/neu
+
+Falls du das nicht warst, ignoriere diese E-Mail einfach – dein Passwort bleibt dann unverändert.`,
+    merkmale: [
+      { feld: "von", kat: "absender", gut: true, text: "Absenderdomain und Linkdomain stimmen überein." },
+      { marker: "du hast gerade angefordert", kat: "kontext", gut: true, text: "Du hast die Mail selbst ausgelöst – sie kam nicht unerwartet." },
+      { marker: "ignoriere diese E-Mail einfach", kat: "druck", gut: true, text: "Kein Druck, keine Drohung. Nichtstun ist ausdrücklich eine Option." },
+    ],
+    fazit: "Echt – solange du das Zurücksetzen selbst angestoßen hast. Kommt so eine Mail unerwartet, versucht jemand anderes, in dein Konto zu kommen.",
+  },
+  {
+    id: 23,
+    stufe: 1,
+    kanal: "sms",
+    phishing: true,
+    von: { name: "+44 7911 223344" },
+    zeit: "Heute, 13:44",
+    text: `GLÜCKWUNSCH! Ihre Nummer wurde für ein neues Smartphone ausgewählt. Nur heute! Jetzt Adresse eintragen: http://gewinn-aktion24.top/de`,
+    merkmale: [
+      { feld: "von", kat: "kontext", text: "Ausländische Vorwahl für ein angebliches deutsches Gewinnspiel." },
+      { marker: "Ihre Nummer wurde für ein neues Smartphone ausgewählt", kat: "koeder", text: "Du kannst nichts gewinnen, wofür du dich nie angemeldet hast." },
+      { marker: "Nur heute!", kat: "druck", text: "Verknappung, damit du nicht nachdenkst." },
+      { marker: "http://gewinn-aktion24.top/de", kat: "link", text: "Unverschlüsselt und auf einer Wegwerf-Endung." },
+    ],
+    fazit: "Am Ende steht meist ein Abo-Vertrag oder eine „Versandgebühr“ mit Kartendaten.",
+  },
+  {
+    id: 24,
+    stufe: 1,
+    kanal: "chat",
+    phishing: false,
+    von: { name: "Trainer Sportverein (Gruppe)" },
+    zeit: "Gestern, 18:02",
+    text: `Kurze Info an alle: Training morgen fällt aus, die Halle wird gereinigt. Nächster Termin wie gewohnt am Freitag. Bis dann!`,
+    merkmale: [
+      { marker: "Training morgen fällt aus", kat: "kontext", gut: true, text: "Normale Vereinsinformation in einer bestehenden Gruppe." },
+      { marker: "Nächster Termin wie gewohnt am Freitag", kat: "daten", gut: true, text: "Keine Links, keine Anhänge, keine Datenabfrage." },
+    ],
+    fazit: "Echt. Nicht jede Nachricht ist ein Angriff – dieses Training braucht auch die ruhigen Fälle.",
+  },
+
+  /* ---------- ERWEITERUNG: STUFE 2 ---------- */
+  {
+    id: 25,
+    stufe: 2,
+    kanal: "email",
+    phishing: true,
+    von: { name: "Nordbank Servicecenter", adresse: "service@nordbank-kundenupdate.com" },
+    betreff: "Ihr PushTAN-Verfahren läuft ab – jetzt per QR-Code aktivieren",
+    zeit: "Heute, 11:20",
+    text: `Guten Tag,
+
+aus Sicherheitsgründen muss Ihr Freigabeverfahren erneuert werden.
+
+Scannen Sie dazu den QR-Code im Anhang mit Ihrem Smartphone und folgen Sie den Schritten.
+
+Nach Ablauf der Frist sind Überweisungen nicht mehr möglich.
+
+Ihr Servicecenter`,
+    anhang: "Aktivierung_QR.png",
+    merkmale: [
+      { feld: "von", kat: "absender", text: "Die Domain gehört nicht zur Bank, klingt aber nach offiziellem Update." },
+      { marker: "Scannen Sie dazu den QR-Code im Anhang", kat: "qr", text: "Der QR-Code versteckt die Adresse. Scanner am Handy öffnen sie oft sofort – und der Spamfilter kann ein Bild nicht prüfen." },
+      { marker: "Nach Ablauf der Frist", kat: "druck", text: "Fristdruck ohne konkretes Datum." },
+    ],
+    fazit: "Quishing – Phishing per QR-Code. Bank-Verfahren richtest du immer in der Banking-App selbst ein, nie über ein Bild aus einer E-Mail.",
+  },
+  {
+    id: 26,
+    stufe: 2,
+    kanal: "chat",
+    phishing: true,
+    von: { name: "SkyfallEvents (Serverbot)" },
+    zeit: "Heute, 20:47",
+    text: `🎁 GIVEAWAY: Die ersten 50 Mitglieder bekommen 3 Monate Premium gratis!
+
+Verbinde einfach deinen Account, um teilzunehmen:
+https://skyfall-events.gift/claim
+
+Nur noch 7 Plätze frei – beeil dich!`,
+    merkmale: [
+      { feld: "von", kat: "absender", text: "Ein Bot, der dir direkt schreibt, obwohl du ihn nie hinzugefügt hast." },
+      { marker: "Verbinde einfach deinen Account", kat: "daten", text: "„Account verbinden“ heißt: Anmeldedaten oder Zugriffsrechte an eine fremde Seite geben." },
+      { marker: "Nur noch 7 Plätze frei", kat: "druck", text: "Künstliche Verknappung mit Countdown-Gefühl." },
+      { marker: "https://skyfall-events.gift/claim", kat: "link", text: "Fremde Domain mit ungewöhnlicher Endung – nicht die Seite des Anbieters." },
+    ],
+    fazit: "Gratis-Giveaways sind der häufigste Weg, Gaming-Accounts zu übernehmen. Kein seriöser Dienst verlangt für ein Gewinnspiel deinen Login.",
+  },
+  {
+    id: 27,
+    stufe: 2,
+    kanal: "sms",
+    phishing: false,
+    von: { name: "Seitenwind" },
+    zeit: "Heute, 08:20",
+    text: `Deine Bestellung SW-48219 kommt heute zwischen 14 und 16 Uhr. Sendungsnummer 00340435... Status im Kundenkonto auf seitenwind-buch.de.`,
+    merkmale: [
+      { marker: "SW-48219", kat: "kontext", gut: true, text: "Dieselbe Bestellnummer wie in der Bestätigungsmail – nachvollziehbar." },
+      { marker: "Status im Kundenkonto auf seitenwind-buch.de", kat: "link", gut: true, text: "Kein anklickbarer Link, nur der Hinweis, selbst ins Konto zu gehen." },
+    ],
+    fazit: "Echt. Der Unterschied zur Paket-Phishing-SMS: keine Gebühr, kein Link, keine Eile.",
+  },
+  {
+    id: 28,
+    stufe: 2,
+    kanal: "email",
+    phishing: true,
+    von: { name: "Recruiting Team", adresse: "hr@karriere-chancen-europa.net" },
+    betreff: "Ihr Profil hat uns überzeugt – 3.200 € monatlich, 100 % remote",
+    zeit: "Heute, 07:33",
+    text: `Hallo,
+
+wir sind auf Ihr Profil aufmerksam geworden und bieten Ihnen eine Position als Zahlungsabwickler an.
+
+Aufgabe: Eingehende Zahlungen auf Ihrem privaten Konto empfangen und weiterleiten. Keine Vorkenntnisse nötig, 2 Stunden pro Tag.
+
+Antworten Sie für Details bitte direkt über WhatsApp: +44 7700 900123`,
+    merkmale: [
+      { marker: "Eingehende Zahlungen auf Ihrem privaten Konto empfangen und weiterleiten", kat: "koeder", text: "Das ist die Tätigkeit eines Finanzagenten – dein Konto soll Geld aus Straftaten weiterwaschen." },
+      { marker: "Keine Vorkenntnisse nötig", kat: "koeder", text: "Viel Geld für keine Qualifikation ist bei echten Stellen nicht üblich." },
+      { marker: "direkt über WhatsApp", kat: "rueckkanal", text: "Wechsel auf einen Kanal ohne Firmenbezug, damit nichts nachvollziehbar bleibt." },
+      { feld: "von", kat: "absender", text: "Allgemeine Fantasiedomain statt einer echten Unternehmensadresse." },
+    ],
+    fazit: "Wer sein Konto dafür hergibt, macht sich strafbar – auch ohne zu wissen, woher das Geld stammt. Diese Masche richtet sich gezielt an junge Leute.",
+  },
+
+  /* ---------- ERWEITERUNG: STUFE 3 ---------- */
+  {
+    id: 29,
+    stufe: 3,
+    kanal: "email",
+    phishing: true,
+    von: { name: "M. Braun", adresse: "m.braun@schule-musterstadt.de" },
+    antwortAn: "m.braun.it@sicher-postfach.net",
+    betreff: "AW: Wartungsarbeiten Donnerstag – Nachtrag",
+    zeit: "Heute, 14:05",
+    text: `Hallo zusammen,
+
+kleiner Nachtrag zur Wartung von gestern: Einige Konten wurden beim Umzug nicht korrekt übernommen.
+
+Bitte prüft kurz über das Formular, ob euer Zugang noch aktiv ist:
+
+https://schule-musterstadt.sso-pruefung.net/status
+
+Danke und Gruß
+M. Braun`,
+    merkmale: [
+      { feld: "antwortAn", kat: "absender", text: "Der Absender sieht echt aus, Antworten gehen aber an ein fremdes Postfach." },
+      { feld: "betreff", kat: "kontext", text: "Das „AW:“ ist der Trick: Der Angreifer hängt sich an einen echten, bereits laufenden Mailverlauf an. Der bekannte Betreff senkt dein Misstrauen." },
+      { marker: "https://schule-musterstadt.sso-pruefung.net/status", kat: "subdomain", text: "Der Schulname ist nur Subdomain. Die echte Domain ist sso-pruefung.net." },
+      { marker: "ob euer Zugang noch aktiv ist", kat: "daten", text: "Die „Prüfung“ besteht aus einer Anmeldemaske, die Zugangsdaten mitschneidet." },
+    ],
+    fazit: "Thread-Hijacking: die wirksamste Variante überhaupt, weil sie an eine echte Konversation anknüpft. Vergleiche mit der echten Wartungsmail weiter vorn – die verlinkte gar nichts.",
+  },
+  {
+    id: 30,
+    stufe: 3,
+    kanal: "email",
+    phishing: true,
+    von: { name: "Bürobedarf Kraus GmbH", adresse: "buchhaltung@buerobedarf-kraus.de" },
+    betreff: "Wichtig: geänderte Bankverbindung ab sofort",
+    zeit: "Heute, 09:15",
+    text: `Sehr geehrte Damen und Herren,
+
+aufgrund eines Bankwechsels bitten wir Sie, künftige Zahlungen auf unser neues Konto zu leisten.
+
+Bitte aktualisieren Sie die Bankverbindung in Ihren Unterlagen. Offene Rechnungen überweisen Sie bitte ebenfalls auf das neue Konto.
+
+Bei Rückfragen erreichen Sie mich unter der unten stehenden Nummer.
+
+Mit freundlichen Grüßen
+F. Kraus, Buchhaltung`,
+    merkmale: [
+      { feld: "betreff", kat: "kontext", text: "Die häufigste Betrugsmasche gegenüber Firmen. Angreifer warten dafür oft wochenlang in einem gekaperten Postfach, bis eine Rechnung fällig wird." },
+      { marker: "Offene Rechnungen überweisen Sie bitte ebenfalls auf das neue Konto", kat: "koeder", text: "Es geht nicht um künftige Zahlungen, sondern um die, die gerade fällig sind." },
+      { marker: "erreichen Sie mich unter der unten stehenden Nummer", kat: "rueckkanal", text: "Die Rückrufnummer stammt aus derselben Mail und führt zum Täter." },
+    ],
+    fazit: "Hier stimmt sogar die Absenderdomain – das Postfach selbst wurde übernommen. Kontowechsel immer telefonisch über eine bekannte alte Nummer bestätigen lassen.",
+  },
+  {
+    id: 31,
+    stufe: 3,
+    kanal: "email",
+    phishing: false,
+    von: { name: "Elektro Weidner", adresse: "rechnung@elektro-weidner.de" },
+    betreff: "Rechnung 2026-0884 zum Auftrag vom 12.08.",
+    zeit: "Gestern, 10:40",
+    anhang: "Rechnung_2026-0884.pdf",
+    text: `Guten Tag,
+
+anbei die Rechnung zum Austausch der Verteilerdose am 12.08.
+
+Betrag: 214,90 EUR, zahlbar bis 02.09. auf das bekannte Konto.
+
+Bei Fragen erreichen Sie uns wie immer unter 05931 442017 oder in der Werkstatt.
+
+Freundliche Grüße
+Elektro Weidner`,
+    merkmale: [
+      { feld: "von", kat: "absender", gut: true, text: "Domain passt zum Betrieb, der tatsächlich beauftragt wurde." },
+      { feld: "anhang", kat: "anhang", gut: true, text: "Einfache PDF-Endung, keine doppelte Dateiendung." },
+      { marker: "zum Austausch der Verteilerdose am 12.08.", kat: "kontext", gut: true, text: "Bezug auf einen Auftrag, den es wirklich gab." },
+      { marker: "auf das bekannte Konto", kat: "daten", gut: true, text: "Keine neue Bankverbindung, keine Änderung, keine Eile." },
+    ],
+    fazit: "Echt – und der Gegentest zur Mail davor. Eine Rechnung mit Anhang ist normal. Alarmierend wird sie erst, wenn sich die Kontonummer ändert.",
+  },
+  {
+    id: 32,
+    stufe: 3,
+    kanal: "sms",
+    phishing: true,
+    von: { name: "Microsoft" },
+    zeit: "Heute, 03:26",
+    text: `Anmeldeversuch aus Warschau. Wenn Sie das waren, bestätigen Sie mit JA. Wir haben bereits 4 Anfragen gesendet.`,
+    merkmale: [
+      { marker: "Wir haben bereits 4 Anfragen gesendet", kat: "druck", text: "Angreifer lösen absichtlich viele Bestätigungsanfragen aus, bis jemand entnervt zustimmt." },
+      { marker: "bestätigen Sie mit JA", kat: "daten", text: "Eine einzige Bestätigung reicht, um den Angreifer in dein Konto zu lassen." },
+      { feld: "von", kat: "kontext", text: "Mitten in der Nacht – zu der Zeit, zu der Menschen am ehesten unüberlegt tippen." },
+    ],
+    fazit: "MFA-Fatigue: Nicht die Zwei-Faktor-Sperre wird geknackt, sondern deine Geduld. Wenn du dich nicht gerade selbst anmeldest, ist jede Anfrage abzulehnen – und das Passwort ist bereits in fremder Hand.",
+  },
+  {
+    id: 33,
+    stufe: 3,
+    kanal: "chat",
+    phishing: false,
+    von: { name: "Jule" },
+    zeit: "Samstag, 19:12",
+    text: `So, die Fotos vom Wochenende sind hochgeladen – Album wie besprochen hier: https://fotobox.de/a/wochenende-august
+
+Sag Bescheid, falls du noch welche dazupacken willst!`,
+    merkmale: [
+      { marker: "wie besprochen", kat: "kontext", gut: true, text: "Angekündigter Inhalt aus einem laufenden Gespräch." },
+      { marker: "https://fotobox.de/a/wochenende-august", kat: "link", gut: true, text: "Kurze, klare Domain ohne Zusätze, sprechender Pfad." },
+      { marker: "Sag Bescheid, falls du noch welche dazupacken willst", kat: "daten", gut: true, text: "Keine Anmeldung nötig, keine Datenabfrage." },
+    ],
+    fazit: "Echt. Vergleiche mit dem Tracking-Link im Link-Modus: Dort war der Dienst unbekannt und der Klick zwingend.",
+  },
+  {
+    id: 34,
+    stufe: 3,
+    kanal: "email",
+    phishing: true,
+    von: { name: "Wissenbox Support", adresse: "support@wissenbox-hilfe.de" },
+    betreff: "Ihre Anfrage #48812 – wir haben Ihr Konto entsperrt",
+    zeit: "Heute, 12:02",
+    text: `Guten Tag,
+
+wie telefonisch besprochen haben wir Ihr Konto wieder freigeschaltet. Sollte der Zugriff weiterhin nicht funktionieren, melden Sie sich bitte erneut an.
+
+Falls Sie keine Anfrage gestellt haben, widersprechen Sie hier innerhalb von 24 Stunden:
+
+https://wissenbox-hilfe.de/widerspruch
+
+Support-Team`,
+    merkmale: [
+      { feld: "von", kat: "absender", text: "Die echte Plattform liegt auf wissenbox.de. Das angehängte „-hilfe.de“ ist eine eigene, fremde Domain." },
+      { marker: "wie telefonisch besprochen", kat: "kontext", text: "Erfundene Vorgeschichte. Sie soll dich verunsichern, weil du dich an kein Gespräch erinnerst." },
+      { marker: "Falls Sie keine Anfrage gestellt haben, widersprechen Sie hier", kat: "daten", text: "Der eigentliche Haken: Der Widerspruch führt zur Anmeldemaske. Der Angriff nutzt deine Beunruhigung als Antrieb." },
+      { marker: "innerhalb von 24 Stunden", kat: "druck", text: "Frist, damit du nicht erst beim echten Support nachfragst." },
+    ],
+    fazit: "Umgekehrte Logik: Die Mail rechnet damit, dass du widersprichst. Wer unsicher ist, ruft den Anbieter über die selbst herausgesuchte Nummer an.",
+  },
+];
+
+/* ============================================================
+   LINKS – zerlegt in Bestandteile.
+   „rolle“ beschreibt den Bestandteil, „kat“ macht ihn zum Merkmal.
+   Alle Adressen sind erfunden bzw. dienen nur als Anschauung.
+   ============================================================ */
+
+const LINKS = [
+  /* ---------- STUFE 1 ---------- */
+  {
+    id: "L1",
+    stufe: 1,
+    phishing: true,
+    kontext: "E-Mail mit dem Betreff „Ihr Konto wurde eingeschränkt“",
+    teile: [
+      { t: "http://", rolle: "Protokoll", kat: "protokoll", text: "Kein „s“ – die Verbindung ist unverschlüsselt. Kein Zahlungsdienst der Welt betreibt seine Anmeldeseite so." },
+      { t: "paypal-sicherheit-verifizierung", rolle: "Domain", kat: "link", text: "Der Markenname ist hier nur ein Wortbestandteil. Die echte Seite liegt auf paypal.com – der Name steht dort direkt vor der Endung." },
+      { t: ".tk", rolle: "Endung", kat: "tld", text: "Kostenlos registrierbare Endung, in Minuten anlegbar und deshalb bei Betrugsseiten beliebt." },
+      { t: "/login", rolle: "Pfad" },
+    ],
+    fazit: "Drei Warnsignale in einer Adresse. Merksatz: Lies die Domain rückwärts – zuerst die Endung, dann den Namen davor.",
+  },
+  {
+    id: "L2",
+    stufe: 1,
+    phishing: false,
+    kontext: "Link aus einem Rechercheartikel, den du selbst gesucht hast",
+    teile: [
+      { t: "https://", rolle: "Protokoll", kat: "protokoll", gut: true, text: "Verschlüsselte Verbindung. Notwendig, aber allein noch kein Echtheitsbeweis – auch Betrugsseiten haben heute https." },
+      { t: "www.", rolle: "Subdomain" },
+      { t: "wikipedia", rolle: "Domain", kat: "link", gut: true, text: "Der Name steht direkt vor der Endung. Genau so muss es aussehen." },
+      { t: ".org", rolle: "Endung" },
+      { t: "/wiki/Phishing", rolle: "Pfad", kat: "kontext", gut: true, text: "Sprechender Pfad, der zum erwarteten Inhalt passt." },
+    ],
+    fazit: "Sicher. Kurze Adresse, bekannte Domain, nachvollziehbarer Pfad.",
+  },
+  {
+    id: "L3",
+    stufe: 1,
+    phishing: true,
+    kontext: "SMS: „Ihre Bestellung konnte nicht zugestellt werden“",
+    teile: [
+      { t: "https://", rolle: "Protokoll" },
+      { t: "amaz0n-konto-pruefen", rolle: "Domain", kat: "homoglyph", text: "Eine Null statt dem „o“. Beim schnellen Lesen springt das Gehirn darüber hinweg." },
+      { t: ".com", rolle: "Endung" },
+      { t: "/verify", rolle: "Pfad", kat: "daten", text: "„verify“, „secure“, „confirm“ – Pfade, die dich zur Eingabe von Zugangsdaten führen sollen." },
+    ],
+    fazit: "https und .com sind hier bewusst gewählt, damit die Adresse harmlos wirkt. Entscheidend ist der Zahlendreher im Namen.",
+  },
+  {
+    id: "L4",
+    stufe: 1,
+    phishing: false,
+    kontext: "Adresse, die du über dein eigenes Lesezeichen geöffnet hast",
+    teile: [
+      { t: "https://", rolle: "Protokoll" },
+      { t: "www.", rolle: "Subdomain" },
+      { t: "sparkasse", rolle: "Domain", kat: "link", gut: true, text: "Markenname unmittelbar vor der Endung, keine Zusätze, keine Bindestriche." },
+      { t: ".de", rolle: "Endung", kat: "tld", gut: true, text: "Landesendung mit Registrierungsprüfung – nicht anonym zu bekommen." },
+      { t: "/service", rolle: "Pfad" },
+    ],
+    fazit: "Sicher. Der stärkste Faktor ist hier gar nicht die Adresse, sondern der Weg: Du bist selbst hingegangen, statt einem Link zu folgen.",
+  },
+
+  /* ---------- STUFE 2 ---------- */
+  {
+    id: "L5",
+    stufe: 2,
+    phishing: true,
+    kontext: "E-Mail: „Bestätigen Sie Ihre Zahlungsmethode“",
+    teile: [
+      { t: "https://", rolle: "Protokoll" },
+      { t: "paypal.com.", rolle: "Subdomain", kat: "subdomain", text: "Der wichtigste Trick überhaupt: Alles vor der eigentlichen Domain ist frei wählbar. „paypal.com.“ ist hier nur ein selbstgewählter Vorsatz." },
+      { t: "sicherheit-check", rolle: "Domain", kat: "link", text: "Das ist die tatsächliche Domain – sie steht direkt vor der Endung und vor dem ersten „/“." },
+      { t: ".net", rolle: "Endung" },
+      { t: "/anmelden", rolle: "Pfad" },
+    ],
+    fazit: "Punkte trennen, sie verbinden nicht. Suche die Endung, gehe von dort ein Wort nach links – das ist der Betreiber der Seite.",
+  },
+  {
+    id: "L6",
+    stufe: 2,
+    phishing: true,
+    kontext: "Jemand aus einem Spiele-Discord, den du nicht kennst: „klick mal kurz, bist das du?“",
+    teile: [
+      { t: "https://", rolle: "Protokoll" },
+      { t: "bit.ly", rolle: "Domain", kat: "kurzlink", text: "Ein Verkürzer ist selbst nicht bösartig – er verbirgt aber vollständig, wohin es geht. Du entscheidest blind." },
+      { t: "/3xQmT7z", rolle: "Pfad" },
+    ],
+    extras: [
+      { kat: "tracker", text: "Genau hier verstecken sich IP-Logger im Grabify-Stil: Die Zwischenseite protokolliert deine IP-Adresse, Browser und Gerät und leitet dich danach auf ein harmloses Bild weiter, damit nichts auffällt." },
+      { kat: "kontext", text: "Unaufgeforderter Link von einer fremden Person – der häufigste Weg, wie solche Logger verteilt werden." },
+    ],
+    fazit: "Kurzlinks lassen sich vorher auflösen, indem du ein „+“ anhängst (bit.ly/xyz+) oder einen Preview-Dienst nutzt. Im Zweifel: nicht klicken.",
+  },
+  {
+    id: "L7",
+    stufe: 2,
+    phishing: false,
+    kontext: "Link aus der README eines Open-Source-Projekts, das du selbst auf GitHub gesucht hast",
+    teile: [
+      { t: "https://", rolle: "Protokoll" },
+      { t: "github", rolle: "Domain", kat: "link", gut: true, text: "Echte Domain direkt vor der Endung, keine Bindestrich-Konstruktion." },
+      { t: ".com", rolle: "Endung" },
+      { t: "/max-m/wetter-widget/releases/tag/v1.2.0", rolle: "Pfad", kat: "kontext", gut: true, text: "Lange Pfade sind kein Warnsignal. Hier bilden sie nur die Ordnerstruktur ab – Nutzer, Projekt, Release." },
+    ],
+    fazit: "Sicher. Ein langer Link ist nicht automatisch verdächtig – entscheidend bleibt allein der Teil vor dem ersten „/“.",
+  },
+  {
+    id: "L8",
+    stufe: 2,
+    phishing: true,
+    kontext: "„Ihre Rechnung liegt zum Download bereit“",
+    teile: [
+      { t: "https://", rolle: "Protokoll" },
+      { t: "drive-google-share", rolle: "Domain", kat: "link", text: "Google Drive liegt auf drive.google.com. Aus Punkten Bindestriche zu machen ergibt eine völlig fremde Domain, die trotzdem vertraut aussieht." },
+      { t: ".com", rolle: "Endung" },
+      { t: "/d/1kQ7/Rechnung_2026.pdf.exe", rolle: "Pfad", kat: "dateiendung", text: "Doppelte Endung: Die Datei endet auf .exe und ist damit ein ausführbares Programm, kein Dokument." },
+    ],
+    fazit: "Zwei Ebenen in einem Link – falsche Domain und gefährlicher Download. Rechnungen holt man sich immer selbst im eigenen Konto ab.",
+  },
+
+  /* ---------- STUFE 3 ---------- */
+  {
+    id: "L9",
+    stufe: 3,
+    phishing: true,
+    kontext: "Bekanntschaft aus einem Spiele-Chat: „schau mal das Bild von gestern“ – kurz danach die beiläufige Frage, aus welcher Gegend du eigentlich kommst",
+    teile: [
+      { t: "https://", rolle: "Protokoll" },
+      { t: "bilder-teilen", rolle: "Domain", kat: "tracker", text: "Ein Bilddienst, den es so nicht gibt. Bekannte Plattformen zeigen eine Vorschau direkt im Chat – hier musst du zwingend klicken, und genau das ist der Zweck." },
+      { t: ".cc", rolle: "Endung", kat: "tld", text: "Günstige, anonym registrierbare Endung ohne Prüfung des Inhabers." },
+      { t: "/i/9f2ka", rolle: "Pfad" },
+    ],
+    extras: [
+      { kat: "tracker", text: "Eine solche Weiterleitungsseite protokolliert beim Aufruf IP-Adresse, Betriebssystem, Browser und die grobe Region – und zeigt danach ein echtes Bild, damit der Klick unauffällig bleibt." },
+      { kat: "kontext", text: "Die Frage nach deiner Gegend direkt nach dem Klick ist der Abgleich: Er prüft, ob die protokollierte Region zu deiner Antwort passt." },
+    ],
+    fazit: "Tracking-Links sind technisch harmlos – sie installieren nichts. Gefährlich ist, was danach passiert: Standort-Region, Provider und Online-Zeiten landen bei einer fremden Person. Bilder immer direkt im Chat schicken lassen.",
+  },
+  {
+    id: "L10",
+    stufe: 3,
+    phishing: false,
+    kontext: "Link aus der Wandertag-Mail deiner Klassenlehrerin",
+    teile: [
+      { t: "https://", rolle: "Protokoll" },
+      { t: "schule-musterstadt", rolle: "Domain", kat: "link", gut: true, text: "Der Bindestrich gehört hier zum echten Namen der Schule – die Endung folgt direkt danach mit einem Punkt." },
+      { t: ".de", rolle: "Endung" },
+      { t: "/vertretungsplan", rolle: "Pfad" },
+      { t: "?token=8f3a91c4b2", rolle: "Parameter", kat: "kontext", gut: true, text: "Ein langer Zufallswert wirkt nach Tracking, ist aber ein ganz normaler Zugriffsschlüssel. Parameter sagen nichts über die Vertrauenswürdigkeit einer Seite aus." },
+    ],
+    fazit: "Sicher – und ein wichtiger Gegentest: Nicht jede kryptische Zeichenfolge ist ein Angriff. Bewertet wird die Domain, nicht die Länge.",
+  },
+  {
+    id: "L11",
+    stufe: 3,
+    phishing: true,
+    kontext: "Chatnachricht mit einem Link, der beim Überfliegen völlig korrekt aussieht",
+    teile: [
+      { t: "https://", rolle: "Protokoll" },
+      { t: "раypal", rolle: "Domain", kat: "homoglyph", text: "Das erste Zeichen ist ein kyrillisches „р“, kein lateinisches „p“. Optisch identisch, technisch eine andere Domain – im Adressfeld erscheint sie als xn--pypal-4ve.com." },
+      { t: ".com", rolle: "Endung" },
+      { t: "/konto", rolle: "Pfad" },
+    ],
+    extras: [
+      { kat: "link", text: "Dagegen hilft kein genaues Hinsehen. Das einzige verlässliche Gegenmittel: Adressen von Banken und Konten nie aus einer Nachricht anklicken, sondern selbst tippen oder ein Lesezeichen benutzen." },
+    ],
+    fazit: "Homograph-Angriff. Moderne Browser zeigen bei gemischten Schriftsystemen den Punycode an – wenn im Adressfeld plötzlich xn-- auftaucht, sofort schließen.",
+  },
+  {
+    id: "L12",
+    stufe: 3,
+    phishing: false,
+    kontext: "Anmeldeseite, die sich beim Login in einer App geöffnet hat",
+    teile: [
+      { t: "https://", rolle: "Protokoll" },
+      { t: "accounts.", rolle: "Subdomain", kat: "subdomain", gut: true, text: "Hier steht die Subdomain vor der echten Domain – genau richtig herum. Vergleiche das mit dem paypal.com.sicherheit-check.net aus Stufe 2." },
+      { t: "google", rolle: "Domain", kat: "link", gut: true, text: "Der Name steht unmittelbar vor der Endung und vor dem ersten „/“. Das ist der Betreiber." },
+      { t: ".com", rolle: "Endung" },
+      { t: "/signin/v2/identifier", rolle: "Pfad" },
+    ],
+    fazit: "Sicher. Subdomains sind völlig normal – es kommt nur darauf an, auf welcher Seite des Namens sie stehen.",
+  },
+
+  /* ---------- ERWEITERUNG ---------- */
+  {
+    id: "L13",
+    stufe: 1,
+    phishing: true,
+    kontext: "SMS: „Ihre Banking-App muss aktualisiert werden“",
+    teile: [
+      { t: "https://", rolle: "Protokoll" },
+      { t: "nordbank-sicherheit", rolle: "Domain", kat: "link", text: "Banken hängen keine Zusätze an ihren Namen. Der echte Auftritt liegt schlicht auf nordbank.de." },
+      { t: ".online", rolle: "Endung", kat: "tld", text: "Günstige Allzweck-Endung. Keine deutsche Bank betreibt darauf ihr Kundenportal." },
+      { t: "/app-update", rolle: "Pfad" },
+    ],
+    fazit: "Apps aktualisierst du ausschließlich über den App Store deines Geräts – niemals über einen Link aus einer Nachricht.",
+  },
+  {
+    id: "L14",
+    stufe: 1,
+    phishing: false,
+    kontext: "Link aus einem Schulmaterial zur Medienbildung",
+    teile: [
+      { t: "https://", rolle: "Protokoll" },
+      { t: "www.", rolle: "Subdomain" },
+      { t: "klicksafe", rolle: "Domain", kat: "link", gut: true, text: "Name direkt vor der Endung, keine Zusätze." },
+      { t: ".de", rolle: "Endung", kat: "tld", gut: true, text: "Deutsche Landesendung mit geprüftem Inhaber." },
+      { t: "/phishing", rolle: "Pfad", kat: "kontext", gut: true, text: "Kurzer, sprechender Pfad zum erwarteten Thema." },
+    ],
+    fazit: "Sicher. Kurz, klar, keine Weiterleitung – so sieht eine unauffällige Adresse aus.",
+  },
+  {
+    id: "L15",
+    stufe: 2,
+    phishing: true,
+    kontext: "E-Mail: „Ihr Kundenportal wurde umgezogen“",
+    teile: [
+      { t: "http://", rolle: "Protokoll", kat: "protokoll", text: "Unverschlüsselt – bei einem angeblichen Kundenportal ausgeschlossen." },
+      { t: "192.0.2.45", rolle: "Adresse statt Domain", kat: "link", text: "Eine nackte IP-Adresse hat gar keinen Namen, den man prüfen könnte. Seriöse Anbieter benutzen immer eine Domain." },
+      { t: "/kundenportal/login", rolle: "Pfad", kat: "daten", text: "Anmeldemaske auf einem anonymen Server." },
+    ],
+    fazit: "Zahlen statt Name ist eines der eindeutigsten Warnsignale überhaupt – meist ein gekaperter Server ohne jede Zuordnung.",
+  },
+  {
+    id: "L16",
+    stufe: 2,
+    phishing: true,
+    kontext: "Newsletter eines Dienstes, bei dem du wirklich angemeldet bist",
+    teile: [
+      { t: "https://", rolle: "Protokoll" },
+      { t: "wissenbox", rolle: "Domain", kat: "link", gut: true, text: "Die Domain am Anfang ist echt – genau das macht diesen Fall gefährlich." },
+      { t: ".de", rolle: "Endung" },
+      { t: "/weiter", rolle: "Pfad" },
+      { t: "?ziel=http://anmeldung-pruefen.tk/login", rolle: "Parameter", kat: "weiterleitung", text: "Die echte Seite leitet ungeprüft weiter, wohin der Parameter zeigt. Du landest auf anmeldung-pruefen.tk – die Adresse am Anfang war nur Tarnung." },
+    ],
+    fazit: "Offene Weiterleitung. Deshalb reicht es nicht, nur den Anfang zu lesen: Steht in einem Parameter eine zweite vollständige Adresse, ist das das eigentliche Ziel.",
+  },
+  {
+    id: "L17",
+    stufe: 2,
+    phishing: false,
+    kontext: "Adresse, die dein Mailprogramm im Browser anzeigt",
+    teile: [
+      { t: "https://", rolle: "Protokoll" },
+      { t: "mail.", rolle: "Subdomain", kat: "subdomain", gut: true, text: "Subdomain vor der echten Domain – richtig herum." },
+      { t: "wissenbox", rolle: "Domain", kat: "link", gut: true, text: "Betreiber unmittelbar vor der Endung und vor dem ersten „/“." },
+      { t: ".de", rolle: "Endung" },
+      { t: "/posteingang", rolle: "Pfad" },
+    ],
+    fazit: "Sicher. Direkter Vergleich zum Fall davor: gleiche Domain am Anfang, aber kein Parameter, der woanders hinführt.",
+  },
+  {
+    id: "L18",
+    stufe: 2,
+    phishing: false,
+    kontext: "Downloadlink aus dem Elternbrief der Schule",
+    teile: [
+      { t: "https://", rolle: "Protokoll" },
+      { t: "www.", rolle: "Subdomain" },
+      { t: "schule-musterstadt", rolle: "Domain", kat: "link", gut: true, text: "Echte Schul-Domain, Bindestrich gehört zum Namen." },
+      { t: ".de", rolle: "Endung" },
+      { t: "/downloads/hausordnung.pdf", rolle: "Pfad", kat: "dateiendung", gut: true, text: "Einfache PDF-Endung ohne zweite Endung dahinter." },
+    ],
+    fazit: "Sicher. Ein direkter Dateilink ist unbedenklich, solange Domain und Dateiendung zusammenpassen.",
+  },
+  {
+    id: "L19",
+    stufe: 3,
+    phishing: true,
+    kontext: "Bestellbestätigung, die du auf dem Handy überfliegst",
+    teile: [
+      { t: "https://", rolle: "Protokoll" },
+      { t: "www.", rolle: "Subdomain" },
+      { t: "seitenwind-buch", rolle: "Domain", kat: "link", text: "Der Name stimmt exakt – die Fälschung steckt erst in der Endung." },
+      { t: ".de.com", rolle: "Endung", kat: "tld", text: "Sieht aus wie „.de“, ist aber eine Subdomain unter .com. Die eigentliche Domain heißt de.com und gehört einem Dritten." },
+      { t: "/bestellung", rolle: "Pfad" },
+    ],
+    fazit: "Der Trick sitzt hinten. Lies eine Adresse deshalb immer von rechts: erst die letzte Endung, dann der Name davor.",
+  },
+  {
+    id: "L20",
+    stufe: 3,
+    phishing: true,
+    kontext: "Link in einer Mail, die auf dem Handy nur verkürzt angezeigt wird",
+    teile: [
+      { t: "https://", rolle: "Protokoll" },
+      { t: "sicher.login.konto-pruefung.nordbank.de.", rolle: "Subdomain", kat: "subdomain", text: "Fünf beruhigende Wörter, alle frei erfunden. Auf einem schmalen Display bricht die Anzeige genau hier ab – weiter liest niemand." },
+      { t: "kundencenter-verify", rolle: "Domain", kat: "link", text: "Erst hier steht der tatsächliche Betreiber." },
+      { t: ".info", rolle: "Endung", kat: "tld", text: "Beliebige Endung ohne Prüfung." },
+      { t: "/session", rolle: "Pfad" },
+    ],
+    fazit: "Je länger die Adresse, desto wichtiger die Leserichtung von rechts. Auf dem Handy hilft: Link lange gedrückt halten, statt ihn zu öffnen – dann zeigt das System die vollständige Adresse.",
+  },
+  {
+    id: "L21",
+    stufe: 3,
+    phishing: false,
+    kontext: "Seite, auf der du dein Passwort auf Leaks prüfen willst",
+    teile: [
+      { t: "https://", rolle: "Protokoll" },
+      { t: "haveibeenpwned", rolle: "Domain", kat: "link", gut: true, text: "Bekannter Dienst, Name direkt vor der Endung, keine Zusätze." },
+      { t: ".com", rolle: "Endung" },
+      { t: "/Passwords", rolle: "Pfad", kat: "daten", gut: true, text: "Die Passwortprüfung sendet nie das Passwort, sondern nur die ersten fünf Zeichen seines Hashwerts." },
+    ],
+    fazit: "Sicher. Trotzdem gilt: Solche Adressen selbst eintippen statt anklicken – es gibt Dutzende Nachbauten mit ähnlichen Namen.",
+  },
+  {
+    id: "L22",
+    stufe: 3,
+    phishing: true,
+    kontext: "Chatnachricht mit einem Link, der wie ein Dokument aussieht",
+    teile: [
+      { t: "https://", rolle: "Protokoll" },
+      { t: "docs.wissenbox", rolle: "Subdomain und Domain", kat: "homoglyph", text: "Das „i“ in wissenbox ist hier ein türkisches punktloses ı. Auf dem Bildschirm kaum zu sehen, technisch eine andere Domain." },
+      { t: ".de", rolle: "Endung" },
+      { t: "/freigabe/protokoll.pdf", rolle: "Pfad", kat: "koeder", text: "Ein Dateiname im Pfad heißt nicht, dass eine Datei kommt. Dahinter liegt genauso gut eine Anmeldemaske." },
+    ],
+    fazit: "Gegen Zeichenverwechslung hilft kein genaues Hinsehen. Verlässlich ist nur: wichtige Adressen selbst eingeben oder aus den eigenen Lesezeichen öffnen.",
+  },
+];
+
+/* ============================================================
+   Hilfsfunktionen
+   ============================================================ */
+
+function mischen(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/** Zerlegt einen Text in Segmente und markiert gefundene Merkmale. */
+function segmentiere(text, merkmale) {
+  const treffer = [];
+  merkmale.forEach((m) => {
+    if (!m.marker) return;
+    const i = text.indexOf(m.marker);
+    if (i === -1) return;
+    treffer.push({ start: i, ende: i + m.marker.length, m });
+  });
+  treffer.sort((a, b) => a.start - b.start);
+
+  const segmente = [];
+  let pos = 0;
+  treffer.forEach((t) => {
+    if (t.start < pos) return;
+    if (t.start > pos) segmente.push({ text: text.slice(pos, t.start) });
+    segmente.push({ text: text.slice(t.start, t.ende), m: t.m });
+    pos = t.ende;
+  });
+  if (pos < text.length) segmente.push({ text: text.slice(pos) });
+  return segmente;
+}
+
+const MODI = {
+  nachrichten: {
+    label: "Nachrichten",
+    unter: "E-Mails, SMS und Chats bewerten",
+    daten: NACHRICHTEN,
+    einheit: "Nachrichten",
+    knopfEcht: "Echt",
+    knopfPhish: "Phishing",
+    stufen: ["", "Offensichtliche Fehler", "Sauber gemachte Fälschungen", "Spear-Phishing mit echtem Kontext"],
+  },
+  links: {
+    label: "Links",
+    unter: "Adressen zerlegen und einordnen",
+    daten: LINKS,
+    einheit: "Links",
+    knopfEcht: "Sicher",
+    knopfPhish: "Verdächtig",
+    stufen: ["", "Deutlich falsche Domains", "Subdomains und Kurzlinks", "Tracker und Zeichentricks"],
+  },
+};
+
+/** Vereinheitlicht die Merkmale beider Modi und nummeriert sie durch. */
+function merkmaleVon(eintrag) {
+  const roh = eintrag.teile
+    ? [...eintrag.teile.filter((t) => t.kat), ...(eintrag.extras || [])]
+    : eintrag.merkmale;
+  return roh.map((m, i) => ({ ...m, nr: i + 1 }));
+}
+
+/* ============================================================
+   NOTFALL – Was tun, wenn es passiert ist
+   ============================================================ */
+
+const NOTFALL = [
+  {
+    id: "n1",
+    titel: "Du hast auf Phishing geklickt",
+    wenn: "Du hast Zugangsdaten eingegeben oder etwas heruntergeladen.",
+    tun: [
+      "Sofort das Passwort ändern – und überall dort, wo du dasselbe Passwort noch benutzt.",
+      "Zwei-Faktor-Authentifizierung einschalten, falls noch nicht aktiv.",
+      "Bei Bank- oder Zahlungsdaten: Karte sperren über den Sperr-Notruf 116 116, dann die Bank anrufen.",
+      "Die Nummer der Bank von der eigenen Karte ablesen, nie aus der Nachricht.",
+      "Kontobewegungen der nächsten Wochen durchsehen.",
+      "Wenn du eine Datei geöffnet hast: Gerät mit einem Virenscanner prüfen und vom Netz nehmen.",
+    ],
+    nicht: [
+      "Nicht abwarten, ob etwas passiert – die ersten Minuten zählen.",
+      "Die Phishing-Mail nicht löschen, sie ist Beweismittel.",
+    ],
+  },
+  {
+    id: "n2",
+    titel: "Jemand erpresst dich",
+    wenn: "Eine Person droht, Bilder, Chats oder Daten von dir zu veröffentlichen.",
+    tun: [
+      "Beweise sichern: Screenshots vom Chat, vom Profil, vom Nutzernamen und von der Zahlungsaufforderung.",
+      "Kontakt abbrechen, die Person blockieren und das Profil bei der Plattform melden.",
+      "Mit einer erwachsenen Person sprechen, der du vertraust – Eltern, Lehrkraft, Schulsozialarbeit.",
+      "Anzeige bei der Polizei erstatten, vor Ort oder über die Online-Wache deines Bundeslandes.",
+      "Beratung holen: juuuport.de oder 116 111 – beide anonym und kostenlos.",
+    ],
+    nicht: [
+      "Niemals zahlen. Eine Zahlung beendet die Erpressung nicht, sie beweist nur, dass du zahlst.",
+      "Nicht verhandeln, nicht diskutieren, keine weiteren Bilder schicken.",
+      "Nichts löschen, bevor die Beweise gesichert sind.",
+    ],
+    schluss:
+      "Erpressung ist eine Straftat. Die erpresste Person macht sich nicht strafbar – auch dann nicht, wenn ihr die Situation unangenehm ist. Diese Fälle sind bei der Polizei Alltag, du bist dort nicht der erste Mensch mit diesem Problem.",
+  },
+  {
+    id: "n3",
+    titel: "Deine Daten wurden veröffentlicht (Doxxing)",
+    wenn: "Adresse, Telefonnummer, Klarname oder Fotos von dir stehen ungefragt im Netz.",
+    tun: [
+      "Zuerst Beweise sichern: Screenshot mit sichtbarer Adresszeile und Datum.",
+      "Inhalt bei der Plattform melden und ausdrücklich Löschung verlangen.",
+      "Bei Suchmaschinen die Entfernung aus den Ergebnissen beantragen.",
+      "Passwörter der betroffenen Konten ändern und Zwei-Faktor aktivieren.",
+      "Familie und enge Freunde informieren – oft sind ihre Daten mit betroffen.",
+      "Anzeige erstatten. Das Verbreiten personenbezogener Daten zum Schaden anderer ist strafbar.",
+    ],
+    nicht: [
+      "Nicht öffentlich zurückschlagen – das erhöht nur die Reichweite.",
+      "Keine weiteren Details posten, um etwas richtigzustellen.",
+    ],
+  },
+  {
+    id: "n4",
+    titel: "Du wirst bedroht",
+    wenn: "Jemand droht dir mit Gewalt, verfolgt dich oder schüchtert dich systematisch ein.",
+    tun: [
+      "Bei akuter Gefahr sofort die 110 wählen.",
+      "Alles dokumentieren: Screenshots mit Datum, Uhrzeit und Nutzername.",
+      "Person blockieren und bei der Plattform melden.",
+      "Es jemandem erzählen – Eltern, Lehrkraft, Vertrauensperson. Nicht damit allein bleiben.",
+      "Anzeige erstatten, auch bei Drohungen ohne körperlichen Kontakt.",
+    ],
+    nicht: [
+      "Nicht antworten und sich nicht auf Diskussionen einlassen.",
+      "Keine persönlichen Treffen vereinbaren, um die Sache zu klären.",
+    ],
+  },
+  {
+    id: "n5",
+    titel: "Du hast einen Tracking-Link angeklickt",
+    wenn: "Der Link war ein IP-Logger oder eine Weiterleitungsseite.",
+    tun: [
+      "Ruhig bleiben: Ein Logger installiert nichts auf deinem Gerät.",
+      "Kontakt zur Person abbrechen und blockieren.",
+      "Chat und Link als Screenshot sichern, falls es weitergeht.",
+      "Router neu starten – bei vielen Anschlüssen ändert sich dabei die IP-Adresse.",
+      "Bei weiteren Nachrichten oder Drohungen: melden und Anzeige erstatten.",
+    ],
+    nicht: [
+      "Der Person nicht bestätigen, ob die Angaben stimmen – sie testet damit ihren Treffer.",
+      "Keine Panik: Die genaue Wohnadresse verrät eine IP-Adresse nicht.",
+    ],
+    schluss:
+      "Sichtbar werden dabei ungefähre Region, Internetanbieter, Gerät, Browser und Uhrzeit. Das ist unangenehm, aber kein Zugriff auf dein Gerät.",
+  },
+];
+
+const GRUNDREGELN = [
+  "Beweise sichern, bevor du irgendetwas löschst oder blockierst.",
+  "Nicht zahlen und nicht verhandeln.",
+  "Nicht allein bleiben – einer Person erzählen, der du vertraust.",
+  "Anzeige ist immer möglich, auch Tage oder Wochen später.",
+];
+
+const HILFE = [
+  { name: "Polizei-Notruf", wert: "110", info: "Bei akuter Gefahr. Anzeige sonst über die Online-Wache deines Bundeslandes." },
+  { name: "Nummer gegen Kummer", wert: "116 111", info: "Kinder- und Jugendtelefon, Mo–Sa 14–20 Uhr. Anonym und kostenlos, auch per Chat und Mail." },
+  { name: "juuuport.de", wert: "Online", info: "Jugendliche beraten Jugendliche bei Cybermobbing, Datenklau und Erpressung mit Bildern." },
+  { name: "Weisser Ring", wert: "116 006", info: "Opfer-Telefon für Betroffene von Straftaten, täglich 7–22 Uhr, kostenfrei." },
+  { name: "Hilfe-Telefon Sexueller Missbrauch", wert: "0800 22 55 530", info: "Vertraulich und anonym, auch bei Erpressung mit intimen Bildern." },
+  { name: "Elterntelefon", wert: "0800 111 0 550", info: "Für Eltern und Erziehende, Mo–Fr ab 9 Uhr." },
+  { name: "Sperr-Notruf", wert: "116 116", info: "Karten und Zugänge sperren lassen, rund um die Uhr." },
+  { name: "TelefonSeelsorge", wert: "0800 111 0 111", info: "Rund um die Uhr erreichbar, wenn dir alles zu viel wird." },
+];
+
+/* ============================================================
+   DATENLECK-DEMO
+   Erfundene Dienste, erfundene Adressen, erfundene Zahlen.
+   Die Prüfung läuft ausschließlich lokal im Browser.
+   ============================================================ */
+
+const DEMO_LECKS = {
+  "skyfall": {
+    dienst: "Skyfall Craft",
+    jahr: 2023,
+    konten: "4,2 Mio.",
+    daten: ["E-Mail-Adresse", "Nutzername", "Passwort (schwach gehasht)", "IP-Adresse"],
+    schwere: "hoch",
+    was: "Passwörter waren mit einem veralteten Verfahren gesichert und ließen sich zurückrechnen.",
+  },
+  "pixelbase": {
+    dienst: "Pixelbase Forum",
+    jahr: 2019,
+    konten: "780.000",
+    daten: ["E-Mail-Adresse", "Nutzername", "Geburtsdatum", "Passwort im Klartext"],
+    schwere: "hoch",
+    was: "Die Passwörter lagen völlig ungesichert in der Datenbank.",
+  },
+  "seitenwind": {
+    dienst: "Buchhandlung Seitenwind",
+    jahr: 2021,
+    konten: "120.000",
+    daten: ["E-Mail-Adresse", "Name", "Lieferadresse", "Bestellhistorie"],
+    schwere: "mittel",
+    was: "Keine Passwörter betroffen, dafür Adressdaten – gutes Material für glaubwürdige Fake-Mails.",
+  },
+  "flimmerbox": {
+    dienst: "Flimmerbox",
+    jahr: 2024,
+    konten: "2,1 Mio.",
+    daten: ["E-Mail-Adresse", "Name", "Art der Zahlungsmethode"],
+    schwere: "mittel",
+    was: "Vollständige Kartennummern waren nicht enthalten, die Zuordnung Person zu Dienst aber schon.",
+  },
+  "bitmagazin": {
+    dienst: "Bitmagazin Newsletter",
+    jahr: 2022,
+    konten: "45.000",
+    daten: ["E-Mail-Adresse"],
+    schwere: "niedrig",
+    was: "Nur der Verteiler. Folge: mehr Spam und gezieltere Werbe-Mails.",
+  },
+};
+
+const DEMO_KONTEN = [
+  { adresse: "max.mustermann@beispiel.de", treffer: ["skyfall", "seitenwind", "bitmagazin"], hinweis: "Der typische Fall: ein alter Spiele-Account, ein Shop und ein Newsletter." },
+  { adresse: "gaming.fan@beispiel.de", treffer: ["pixelbase", "skyfall"], hinweis: "Zwei Lecks mit Passwörtern – der dringendste Fall." },
+  { adresse: "neu.angelegt@beispiel.de", treffer: [], hinweis: "Kein Treffer. Das heißt aber nicht automatisch „sicher“." },
+];
+
+/* ============================================================
+   Darstellung – Optionen für das Einstellungsmenü
+   ============================================================ */
+
+const AKZENTE = [
+  { key: "gelb", name: "Gelb", hell: "#ffd84d", tief: "#8a6a00" },
+  { key: "tuerkis", name: "Türkis", hell: "#5ad6c0", tief: "#0d7565" },
+  { key: "lila", name: "Lila", hell: "#b48cff", tief: "#5b2fb8" },
+  { key: "orange", name: "Orange", hell: "#ff9f45", tief: "#a1520a" },
+  { key: "rosa", name: "Rosa", hell: "#ff7eb6", tief: "#a51e60" },
+];
+
+const SCHRIFTGROESSEN = [
+  { key: "klein", name: "Klein", skala: 0.9 },
+  { key: "normal", name: "Normal", skala: 1 },
+  { key: "gross", name: "Groß", skala: 1.15 },
+  { key: "xl", name: "Sehr groß", skala: 1.3 },
+];
+
+/* ============================================================
+   Komponente
+   ============================================================ */
+
+function PhishingTrainer() {
+  const [ansicht, setAnsicht] = useState("start"); // start | training | auswertung
+  const [lexikonOffen, setLexikonOffen] = useState(null); // null | "warnsignale" | "notfall"
+  const [modus, setModus] = useState("nachrichten");
+  const [stufe, setStufe] = useState(0);
+  const [queue, setQueue] = useState([]);
+  const [index, setIndex] = useState(0);
+  const [wahl, setWahl] = useState(null);
+  const [protokoll, setProtokoll] = useState([]);
+  const [design, setDesign] = useState(() => ({ thema: (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) ? "hell" : "dunkel", akzent: "gelb", schrift: "normal" }));
+  const [designOffen, setDesignOffen] = useState(false);
+  React.useEffect(() => {
+    document.body.style.background = design.thema === "hell" ? "#eef0f5" : "#0c1220";
+    document.documentElement.setAttribute("data-theme", design.thema === "hell" ? "light" : "dark");
+  }, [design.thema]);
+
+  const akzent = _nullishCoalesce(AKZENTE.find((a) => a.key === design.akzent), () => ( AKZENTE[0]));
+  const groesse = _nullishCoalesce(SCHRIFTGROESSEN.find((g) => g.key === design.schrift), () => ( SCHRIFTGROESSEN[1]));
+
+  const aktuell = queue[index];
+  const konfig = MODI[modus];
+
+  function starten(gewaehlterModus, gewaehlteStufe) {
+    const quelle = MODI[gewaehlterModus].daten;
+    const gefiltert = gewaehlteStufe === 0 ? quelle : quelle.filter((n) => n.stufe === gewaehlteStufe);
+    setModus(gewaehlterModus);
+    setStufe(gewaehlteStufe);
+    setQueue(mischen(gefiltert));
+    setIndex(0);
+    setWahl(null);
+    setProtokoll([]);
+    setAnsicht("training");
+  }
+
+  function antworten(gewaehlt) {
+    if (wahl !== null) return;
+    const richtig = gewaehlt === aktuell.phishing;
+    setWahl(gewaehlt);
+    setProtokoll((p) => [
+      ...p,
+      { id: aktuell.id, richtig, phishing: aktuell.phishing, merkmale: merkmaleVon(aktuell) },
+    ]);
+  }
+
+  function weiter() {
+    if (index + 1 >= queue.length) {
+      setAnsicht("auswertung");
+    } else {
+      setIndex(index + 1);
+      setWahl(null);
+    }
+  }
+
+  const richtigAnzahl = protokoll.filter((p) => p.richtig).length;
+
+  const auswertung = useMemo(() => {
+    const uebersehen = {};
+    let fehlalarme = 0;
+    protokoll.forEach((p) => {
+      if (p.richtig) return;
+      if (!p.phishing) {
+        fehlalarme += 1;
+        return;
+      }
+      p.merkmale.filter((m) => !m.gut).forEach((m) => {
+        uebersehen[m.kat] = (uebersehen[m.kat] || 0) + 1;
+      });
+    });
+    const liste = Object.entries(uebersehen)
+      .map(([kat, n]) => ({ kat, n }))
+      .sort((a, b) => b.n - a.n);
+    return { liste, fehlalarme };
+  }, [protokoll]);
+
+  return (
+    React.createElement('div', {
+      className: `pt-root ${design.thema === "hell" ? "ist-hell" : ""}`,
+      style: {
+        "--skala": groesse.skala,
+        "--marker": akzent.hell,
+        "--marker-tief": akzent.tief,
+      },}
+
+      , React.createElement('style', null, CSS)
+
+      , React.createElement('header', { className: "pt-kopf",}
+        , React.createElement('div', { className: "pt-marke",}
+          , React.createElement('span', { className: "pt-logo", 'aria-hidden': "true",} )
+          , React.createElement('span', { className: "pt-markenname",}, "Phishing-Trainer")
+        )
+        , React.createElement('div', { className: "pt-kopf-rechts",}
+          , ansicht === "training" && (
+            React.createElement('span', { className: "pt-zaehler",}
+              , index + 1, React.createElement('span', { className: "pt-schraeg",}, "/"), queue.length
+              , React.createElement('span', { className: "pt-punkte",}, richtigAnzahl, " richtig" )
+            )
+          )
+          , React.createElement('button', { className: "pt-lexikon-knopf", onClick: () => setLexikonOffen("warnsignale"),}, "Warnsignale"
+
+          )
+          , React.createElement('button', { className: "pt-lexikon-knopf ist-notfall" , onClick: () => setLexikonOffen("notfall"),}, "Notfall"
+
+          )
+          , React.createElement('button', {
+            className: "pt-zahnrad",
+            onClick: () => setDesignOffen(true),
+            'aria-label': "Darstellung einstellen" ,
+            title: "Darstellung",}
+
+            , React.createElement('svg', { viewBox: "0 0 24 24"   , width: "17", height: "17", 'aria-hidden': "true", fill: "none",
+                 stroke: "currentColor", strokeWidth: "1.8", strokeLinecap: "round", strokeLinejoin: "round",}
+              , React.createElement('circle', { cx: "12", cy: "12", r: "3.2",} )
+              , React.createElement('path', { d: "M19.4 14.5a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.55-1.1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9.5a1.7 1.7 0 0 0 1-1.56V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.04a1.7 1.7 0 0 0 1.56 1h.05a2 2 0 1 1 0 4H21a1.7 1.7 0 0 0-1.56 1.03z"                                                                                                                              ,} )
+            )
+          )
+        )
+      )
+
+      , ansicht === "training" && (
+        React.createElement('div', { className: "pt-fortschritt", role: "progressbar", 'aria-valuenow': index, 'aria-valuemax': queue.length,}
+          , React.createElement('div', { className: "pt-fortschritt-balken", style: { width: `${(index / queue.length) * 100}%` },} )
+        )
+      )
+
+      , React.createElement('main', { className: "pt-haupt",}
+        , ansicht === "start" && React.createElement(StartAnsicht, { onStart: starten,} )
+
+        , ansicht === "training" && aktuell && modus === "nachrichten" && (
+          React.createElement(TrainingsAnsicht, {
+            nachricht: aktuell,
+            wahl: wahl,
+            konfig: konfig,
+            onAntwort: antworten,
+            onWeiter: weiter,
+            letzte: index + 1 >= queue.length,}
+          )
+        )
+
+        , ansicht === "training" && aktuell && modus === "links" && (
+          React.createElement(LinkAnsicht, {
+            eintrag: aktuell,
+            wahl: wahl,
+            konfig: konfig,
+            onAntwort: antworten,
+            onWeiter: weiter,
+            letzte: index + 1 >= queue.length,}
+          )
+        )
+
+        , ansicht === "auswertung" && (
+          React.createElement(AuswertungsAnsicht, {
+            gesamt: protokoll.length,
+            richtig: richtigAnzahl,
+            auswertung: auswertung,
+            modus: modus,
+            onNochmal: () => starten(modus, stufe),
+            onStart: () => setAnsicht("start"),
+            onLexikon: () => setLexikonOffen("warnsignale"),}
+          )
+        )
+      )
+
+      , lexikonOffen && React.createElement(Hilfe, { startTab: lexikonOffen, onSchliessen: () => setLexikonOffen(null),} )
+
+      , designOffen && (
+        React.createElement(Einstellungen, {
+          design: design,
+          setDesign: setDesign,
+          onSchliessen: () => setDesignOffen(false),}
+        )
+      )
+    )
+  );
+}
+
+/* ---------- Startbildschirm ---------- */
+
+function StartAnsicht({ onStart }) {
+  const [modus, setModus] = useState("nachrichten");
+  const konfig = MODI[modus];
+
+  const anzahl = (s) => (s === 0 ? konfig.daten.length : konfig.daten.filter((n) => n.stufe === s).length);
+
+  return (
+    React.createElement('section', { className: "pt-start",}
+      , React.createElement('p', { className: "pt-eyebrow",}, "Trainingsmodus")
+      , React.createElement('h1', { className: "pt-titel",}, "Ein Beispiel."
+         , React.createElement('br', null )
+        , React.createElement('span', { className: "pt-titel-akzent",}, "Zwei Möglichkeiten." )
+      )
+
+      , React.createElement('div', { className: "pt-modus-schalter", role: "tablist",}
+        , Object.entries(MODI).map(([key, m]) => (
+          React.createElement('button', {
+            key: key,
+            role: "tab",
+            'aria-selected': modus === key,
+            className: `pt-modus ${modus === key ? "ist-aktiv" : ""}`,
+            onClick: () => setModus(key),}
+
+            , React.createElement('span', { className: "pt-modus-label",}, m.label)
+            , React.createElement('span', { className: "pt-modus-unter",}, m.unter)
+          )
+        ))
+      )
+
+      , React.createElement('p', { className: "pt-lead",}
+        , modus === "nachrichten"
+          ? "Du siehst nacheinander E-Mails, SMS und Chatnachrichten. Entscheide jedes Mal: echt oder Phishing? Danach werden die entscheidenden Stellen direkt in der Nachricht markiert."
+          : "Du siehst nacheinander einzelne Adressen mit dem Kontext, in dem sie ankommen. Entscheide: sicher oder verdächtig? Danach wird der Link in seine Bestandteile zerlegt."
+      )
+
+      , React.createElement('div', { className: "pt-stufen",}
+        , [0, 1, 2, 3].map((s) => (
+          React.createElement('button', { key: s, className: "pt-stufe", onClick: () => onStart(modus, s),}
+            , React.createElement('span', { className: "pt-stufe-label",}
+              , s === 0 ? "Alle Stufen" : ["", "Leicht", "Mittel", "Schwer"][s]
+            )
+            , React.createElement('span', { className: "pt-stufe-info",}
+              , s === 0 ? `${anzahl(0)} ${konfig.einheit}, gemischt` : konfig.stufen[s]
+            )
+            , React.createElement('span', { className: "pt-stufe-n",}, anzahl(s))
+          )
+        ))
+      )
+
+      , React.createElement('p', { className: "pt-hinweis",}, "Alle Beispiele sind frei erfunden. Personen, Firmen, Adressen und Links existieren nicht, es werden keine Daten erhoben oder gespeichert – die Links sind bewusst nicht anklickbar."
+
+
+      )
+    )
+  );
+}
+
+/* ---------- Trainingsansicht ---------- */
+
+function TrainingsAnsicht({ nachricht, wahl, konfig, onAntwort, onWeiter, letzte }) {
+  const aufgedeckt = wahl !== null;
+  const richtig = wahl === nachricht.phishing;
+
+  const nummeriert = merkmaleVon(nachricht);
+  const segmente = segmentiere(nachricht.text, nummeriert);
+  const feldMerkmal = (feld) => nummeriert.find((m) => m.feld === feld);
+
+  const kanalLabel = { email: "E-Mail", sms: "SMS", chat: "Chatnachricht" }[nachricht.kanal];
+
+  return (
+    React.createElement('section', { className: "pt-training",}
+      , React.createElement('div', { className: "pt-kanal-zeile",}
+        , React.createElement('span', { className: "pt-kanal",}, kanalLabel)
+        , React.createElement('span', { className: "pt-stufe-tag",}
+          , ["", "leicht", "mittel", "schwer"][nachricht.stufe]
+        )
+      )
+
+      , React.createElement('article', { className: `pt-karte pt-karte--${nachricht.kanal} ${aufgedeckt ? "ist-aufgedeckt" : ""}`,}
+        , nachricht.kanal === "email" && (
+          React.createElement('div', { className: "pt-kopfzeilen",}
+            , React.createElement(Kopfzeile, {
+              label: "Von",
+              wert: `${nachricht.von.name} <${nachricht.von.adresse}>`,
+              merkmal: feldMerkmal("von"),
+              aufgedeckt: aufgedeckt,}
+            )
+            , nachricht.antwortAn && (
+              React.createElement(Kopfzeile, {
+                label: "Antwort an" ,
+                wert: nachricht.antwortAn,
+                merkmal: feldMerkmal("antwortAn"),
+                aufgedeckt: aufgedeckt,}
+              )
+            )
+            , React.createElement(Kopfzeile, { label: "Betreff", wert: nachricht.betreff, merkmal: feldMerkmal("betreff"), aufgedeckt: aufgedeckt,} )
+            , React.createElement(Kopfzeile, { label: "Datum", wert: nachricht.zeit,} )
+            , nachricht.anhang && (
+              React.createElement(Kopfzeile, {
+                label: "Anhang",
+                wert: nachricht.anhang,
+                merkmal: feldMerkmal("anhang"),
+                aufgedeckt: aufgedeckt,
+                mono: true,}
+              )
+            )
+          )
+        )
+
+        , nachricht.kanal !== "email" && (
+          React.createElement('div', { className: "pt-mobil-kopf",}
+            , React.createElement('span', { className: "pt-mobil-avatar", 'aria-hidden': "true",}
+              , nachricht.von.name.trim().charAt(0)
+            )
+            , React.createElement('span', { className: "pt-mobil-name",}
+              , aufgedeckt && feldMerkmal("von") ? (
+                React.createElement(Markierung, { m: feldMerkmal("von"),}, nachricht.von.name)
+              ) : (
+                nachricht.von.name
+              )
+            )
+            , React.createElement('span', { className: "pt-mobil-zeit",}, nachricht.zeit)
+          )
+        )
+
+        , React.createElement('div', { className: `pt-koerper ${nachricht.kanal !== "email" ? "pt-koerper--blase" : ""}`,}
+          , segmente.map((seg, i) =>
+            seg.m && aufgedeckt ? (
+              React.createElement(Markierung, { key: i, m: seg.m,}, seg.text)
+            ) : (
+              React.createElement('span', { key: i,}, seg.text)
+            )
+          )
+        )
+      )
+
+      , !aufgedeckt && (
+        React.createElement('div', { className: "pt-wahl",}
+          , React.createElement('button', { className: "pt-wahl-knopf pt-wahl-knopf--echt" , onClick: () => onAntwort(false),}
+            , konfig.knopfEcht
+          )
+          , React.createElement('button', { className: "pt-wahl-knopf pt-wahl-knopf--phish" , onClick: () => onAntwort(true),}
+            , konfig.knopfPhish
+          )
+        )
+      )
+
+      , aufgedeckt && (
+        React.createElement('div', { className: "pt-feedback",}
+          , React.createElement('div', { className: `pt-urteil ${richtig ? "ist-richtig" : "ist-falsch"}`,}
+            , React.createElement('strong', null, richtig ? "Richtig." : "Daneben."), " "
+            , nachricht.phishing
+              ? "Diese Nachricht ist Phishing."
+              : "Diese Nachricht ist echt."
+          )
+
+          , React.createElement('p', { className: "pt-merkmale-titel",}
+            , nachricht.phishing ? "Das hätte dich stutzig machen sollen" : "Das spricht für die Echtheit"
+          )
+
+          , React.createElement('ol', { className: "pt-merkmale",}
+            , nummeriert.map((m) => (
+              React.createElement('li', { key: m.nr, className: `pt-merkmal ${m.gut ? "ist-gut" : "ist-warnung"}`,}
+                , React.createElement('span', { className: "pt-merkmal-nr",}, m.nr)
+                , React.createElement('span', { className: "pt-merkmal-inhalt",}
+                  , React.createElement('span', { className: "pt-merkmal-kat",}, KATEGORIEN[m.kat].name)
+                  , React.createElement('span', { className: "pt-merkmal-text",}, m.text)
+                )
+              )
+            ))
+          )
+
+          , React.createElement('p', { className: "pt-fazit",}, nachricht.fazit)
+
+          , React.createElement('button', { className: "pt-weiter", onClick: onWeiter,}
+            , letzte ? "Zur Auswertung" : "Nächste Nachricht"
+          )
+        )
+      )
+    )
+  );
+}
+
+function Kopfzeile({ label, wert, merkmal, aufgedeckt, mono }) {
+  return (
+    React.createElement('div', { className: "pt-kopfzeile",}
+      , React.createElement('span', { className: "pt-kopfzeile-label",}, label)
+      , React.createElement('span', { className: `pt-kopfzeile-wert ${mono ? "ist-mono" : ""}`,}
+        , merkmal && aufgedeckt ? React.createElement(Markierung, { m: merkmal,}, wert) : wert
+      )
+    )
+  );
+}
+
+function Markierung({ m, children }) {
+  return (
+    React.createElement('mark', { className: `pt-mark ${m.gut ? "ist-gut" : "ist-warnung"}`,}
+      , children
+      , React.createElement('span', { className: "pt-mark-nr",}, m.nr)
+    )
+  );
+}
+
+/* ---------- Link-Ansicht ---------- */
+
+function LinkAnsicht({ eintrag, wahl, konfig, onAntwort, onWeiter, letzte }) {
+  const aufgedeckt = wahl !== null;
+  const richtig = wahl === eintrag.phishing;
+
+  const nummeriert = merkmaleVon(eintrag);
+  const merkmalFuer = (teil) => nummeriert.find((m) => m.t === teil.t && m.rolle === teil.rolle);
+  const extras = nummeriert.filter((m) => !m.t);
+
+  return (
+    React.createElement('section', { className: "pt-training",}
+      , React.createElement('div', { className: "pt-kanal-zeile",}
+        , React.createElement('span', { className: "pt-kanal",}, "Link")
+        , React.createElement('span', { className: "pt-stufe-tag",}, ["", "leicht", "mittel", "schwer"][eintrag.stufe])
+      )
+
+      , React.createElement('p', { className: "pt-kontext",}
+        , React.createElement('span', { className: "pt-kontext-label",}, "So kam er an"   )
+        , eintrag.kontext
+      )
+
+      , React.createElement('div', { className: `pt-url-karte ${aufgedeckt ? "ist-aufgedeckt" : ""}`,}
+        , React.createElement('div', { className: "pt-url",}
+          , eintrag.teile.map((teil, i) => {
+            const m = merkmalFuer(teil);
+            const klassen = [
+              "pt-url-teil",
+              m ? (m.gut ? "ist-gut" : "ist-warnung") : "",
+              teil.rolle === "Domain" ? "ist-domain" : "",
+            ].join(" ");
+            return (
+              React.createElement('span', { key: i, className: aufgedeckt ? klassen : "pt-url-teil",}
+                , teil.t
+                , aufgedeckt && m && React.createElement('span', { className: "pt-url-nr",}, m.nr)
+              )
+            );
+          })
+        )
+      )
+
+      , !aufgedeckt && (
+        React.createElement('div', { className: "pt-wahl",}
+          , React.createElement('button', { className: "pt-wahl-knopf pt-wahl-knopf--echt" , onClick: () => onAntwort(false),}
+            , konfig.knopfEcht
+          )
+          , React.createElement('button', { className: "pt-wahl-knopf pt-wahl-knopf--phish" , onClick: () => onAntwort(true),}
+            , konfig.knopfPhish
+          )
+        )
+      )
+
+      , aufgedeckt && (
+        React.createElement('div', { className: "pt-feedback",}
+          , React.createElement('div', { className: `pt-urteil ${richtig ? "ist-richtig" : "ist-falsch"}`,}
+            , React.createElement('strong', null, richtig ? "Richtig." : "Daneben."), " "
+            , eintrag.phishing ? "Dieser Link ist verdächtig." : "Dieser Link ist sicher."
+          )
+
+          , React.createElement('p', { className: "pt-merkmale-titel",}, "Aufbau der Adresse"  )
+          , React.createElement('ul', { className: "pt-zerlegung",}
+            , eintrag.teile.map((teil, i) => {
+              const m = merkmalFuer(teil);
+              return (
+                React.createElement('li', {
+                  key: i,
+                  className: `pt-zerlegung-zeile ${teil.rolle === "Domain" ? "ist-domain" : ""} ${
+                    m ? (m.gut ? "ist-gut" : "ist-warnung") : ""
+                  }`,}
+
+                  , React.createElement('span', { className: "pt-zerlegung-rolle",}, teil.rolle || "—")
+                  , React.createElement('span', { className: "pt-zerlegung-wert",}, teil.t)
+                  , teil.rolle === "Domain" && React.createElement('span', { className: "pt-zerlegung-badge",}, "das zählt" )
+                )
+              );
+            })
+          )
+
+          , React.createElement('p', { className: "pt-merkmale-titel",}
+            , eintrag.phishing ? "Das hätte dich stutzig machen sollen" : "Das spricht für den Link"
+          )
+          , React.createElement('ol', { className: "pt-merkmale",}
+            , nummeriert.map((m) => (
+              React.createElement('li', { key: m.nr, className: `pt-merkmal ${m.gut ? "ist-gut" : "ist-warnung"}`,}
+                , React.createElement('span', { className: "pt-merkmal-nr",}, m.nr)
+                , React.createElement('span', { className: "pt-merkmal-inhalt",}
+                  , React.createElement('span', { className: "pt-merkmal-kat",}, KATEGORIEN[m.kat].name)
+                  , React.createElement('span', { className: "pt-merkmal-text",}, m.text)
+                )
+              )
+            ))
+          )
+
+          , extras.length > 0 && React.createElement('p', { className: "pt-extras-hinweis",}, "Die letzten Punkte stehen nicht in der Adresse selbst – sie ergeben sich aus dem Kontext."               )
+
+          , React.createElement('p', { className: "pt-fazit",}, eintrag.fazit)
+
+          , React.createElement('button', { className: "pt-weiter", onClick: onWeiter,}
+            , letzte ? "Zur Auswertung" : "Nächster Link"
+          )
+        )
+      )
+    )
+  );
+}
+
+/* ---------- Auswertung ---------- */
+
+function AuswertungsAnsicht({ gesamt, richtig, auswertung, modus, onNochmal, onStart, onLexikon }) {
+  const quote = gesamt ? Math.round((richtig / gesamt) * 100) : 0;
+  const urteil =
+    quote >= 90 ? "Sehr sicher unterwegs."
+      : quote >= 70 ? "Solide Grundlage, ein paar Lücken."
+        : quote >= 50 ? "Die Hälfte sitzt – jetzt kommt der wichtige Teil."
+          : "Viel Luft nach oben. Genau dafür ist das Training da.";
+
+  return (
+    React.createElement('section', { className: "pt-auswertung",}
+      , React.createElement('p', { className: "pt-eyebrow",}, "Auswertung")
+      , React.createElement('div', { className: "pt-quote",}
+        , React.createElement('span', { className: "pt-quote-zahl",}, quote)
+        , React.createElement('span', { className: "pt-quote-prozent",}, "%")
+      )
+      , React.createElement('p', { className: "pt-quote-detail",}
+        , richtig, " von "  , gesamt, " richtig · "   , urteil
+      )
+
+      , auswertung.liste.length > 0 ? (
+        React.createElement(React.Fragment, null
+          , React.createElement('p', { className: "pt-merkmale-titel",}, "Diese Tricks hast du am häufigsten übersehen"      )
+          , React.createElement('ul', { className: "pt-ranking",}
+            , auswertung.liste.map((e) => (
+              React.createElement('li', { key: e.kat, className: "pt-ranking-zeile",}
+                , React.createElement('span', { className: "pt-ranking-kat",}, KATEGORIEN[e.kat].name)
+                , React.createElement('span', { className: "pt-ranking-balken",}
+                  , React.createElement('span', {
+                    className: "pt-ranking-fuellung",
+                    style: { width: `${(e.n / auswertung.liste[0].n) * 100}%` },}
+                  )
+                )
+                , React.createElement('span', { className: "pt-ranking-n",}, e.n, "×")
+              )
+            ))
+          )
+        )
+      ) : (
+        React.createElement('p', { className: "pt-fazit",}, "Keine übersehenen Warnsignale. Nimm die nächste Stufe."
+
+        )
+      )
+
+      , auswertung.fehlalarme > 0 && (
+        React.createElement('p', { className: "pt-fehlalarm",}
+          , auswertung.fehlalarme, "× hast du etwas Harmloses für einen Angriff gehalten"
+          , modus === "links" ? " – meist wegen langer Pfade oder Parameter." : ".", " ", "Zu misstrauisch ist besser als zu leichtgläubig – aber prüfe, woran es lag."
+
+        )
+      )
+
+      , React.createElement('div', { className: "pt-aktionen",}
+        , React.createElement('button', { className: "pt-weiter", onClick: onNochmal,}, "Nochmal trainieren" )
+        , React.createElement('button', { className: "pt-sekundaer", onClick: onStart,}, "Modus oder Stufe wechseln"   )
+        , React.createElement('button', { className: "pt-sekundaer", onClick: onLexikon,}, "Warnsignale und Notfall-Tipps"  )
+      )
+    )
+  );
+}
+
+/* ---------- Lexikon ---------- */
+
+function Einstellungen({ design, setDesign, onSchliessen }) {
+  const setzen = (feld, wert) => setDesign((d) => ({ ...d, [feld]: wert }));
+
+  return (
+    React.createElement('div', { className: "pt-overlay", role: "dialog", 'aria-label': "Darstellung",}
+      , React.createElement('div', { className: "pt-overlay-inhalt ist-schmal" ,}
+        , React.createElement('div', { className: "pt-overlay-kopf",}
+          , React.createElement('h2', { className: "pt-overlay-titel",}, "Darstellung")
+          , React.createElement('button', { className: "pt-schliessen", onClick: onSchliessen, 'aria-label': "Schließen",}, "×")
+        )
+
+        , React.createElement('p', { className: "pt-feld-titel",}, "Modus")
+        , React.createElement('div', { className: "pt-segment",}
+          , [
+            { key: "dunkel", name: "Dunkel" },
+            { key: "hell", name: "Hell" },
+          ].map((o) => (
+            React.createElement('button', {
+              key: o.key,
+              className: `pt-segment-knopf ${design.thema === o.key ? "ist-aktiv" : ""}`,
+              'aria-pressed': design.thema === o.key,
+              onClick: () => setzen("thema", o.key),}
+
+              , o.name
+            )
+          ))
+        )
+
+        , React.createElement('p', { className: "pt-feld-titel",}, "Akzentfarbe")
+        , React.createElement('div', { className: "pt-farben",}
+          , AKZENTE.map((a) => (
+            React.createElement('button', {
+              key: a.key,
+              className: `pt-farbe ${design.akzent === a.key ? "ist-aktiv" : ""}`,
+              style: { "--probe": a.hell },
+              'aria-pressed': design.akzent === a.key,
+              'aria-label': a.name,
+              title: a.name,
+              onClick: () => setzen("akzent", a.key),}
+            )
+          ))
+        )
+
+        , React.createElement('p', { className: "pt-feld-titel",}, "Schriftgröße")
+        , React.createElement('div', { className: "pt-segment",}
+          , SCHRIFTGROESSEN.map((g) => (
+            React.createElement('button', {
+              key: g.key,
+              className: `pt-segment-knopf ${design.schrift === g.key ? "ist-aktiv" : ""}`,
+              style: { fontSize: `${12 * g.skala}px` },
+              'aria-pressed': design.schrift === g.key,
+              onClick: () => setzen("schrift", g.key),}
+
+              , g.name
+            )
+          ))
+        )
+
+        , React.createElement('div', { className: "pt-probe",}
+          , React.createElement('p', { className: "pt-probe-label",}, "Vorschau")
+          , React.createElement('p', { className: "pt-probe-text",}, "Die echte Domain steht direkt vor dem ersten „/“ –"
+                     , " "
+            , React.createElement('mark', { className: "pt-mark ist-warnung" ,}, "alles davor ist frei wählbar"    , React.createElement('span', { className: "pt-mark-nr",}, "1")), "."
+          )
+        )
+
+        , React.createElement('p', { className: "pt-hilfe-fuss",}, "Die Einstellungen gelten für diese Sitzung. Nach dem Neuladen startet die App wieder im Standard – gespeichert wird bewusst nichts."
+
+
+        )
+      )
+    )
+  );
+}
+
+function Hilfe({ startTab, onSchliessen }) {
+  const [tab, setTab] = useState(startTab);
+
+  return (
+    React.createElement('div', { className: "pt-overlay", role: "dialog", 'aria-label': "Hilfe",}
+      , React.createElement('div', { className: "pt-overlay-inhalt",}
+        , React.createElement('div', { className: "pt-overlay-kopf",}
+          , React.createElement('div', { className: "pt-overlay-tabs", role: "tablist",}
+            , React.createElement('button', {
+              role: "tab",
+              'aria-selected': tab === "warnsignale",
+              className: `pt-overlay-tab ${tab === "warnsignale" ? "ist-aktiv" : ""}`,
+              onClick: () => setTab("warnsignale"),}
+, "Warnsignale"
+
+            )
+            , React.createElement('button', {
+              role: "tab",
+              'aria-selected': tab === "notfall",
+              className: `pt-overlay-tab ${tab === "notfall" ? "ist-aktiv" : ""}`,
+              onClick: () => setTab("notfall"),}
+, "Notfall"
+
+            )
+            , React.createElement('button', {
+              role: "tab",
+              'aria-selected': tab === "lecks",
+              className: `pt-overlay-tab ${tab === "lecks" ? "ist-aktiv" : ""}`,
+              onClick: () => setTab("lecks"),}
+, "Datenlecks"
+
+            )
+          )
+          , React.createElement('button', { className: "pt-schliessen", onClick: onSchliessen, 'aria-label': "Schließen",}, "×")
+        )
+
+        , tab === "warnsignale" && React.createElement(TabWarnsignale, null )
+        , tab === "notfall" && React.createElement(TabNotfall, null )
+        , tab === "lecks" && React.createElement(TabLecks, null )
+      )
+    )
+  );
+}
+
+function TabWarnsignale() {
+  return (
+    React.createElement(React.Fragment, null
+      , React.createElement('ul', { className: "pt-lexikon",}
+        , Object.entries(KATEGORIEN).map(([key, k]) => (
+          React.createElement('li', { key: key, className: "pt-lexikon-eintrag",}
+            , React.createElement('span', { className: "pt-lexikon-name",}, k.name)
+            , React.createElement('span', { className: "pt-lexikon-kurz",}, k.kurz)
+          )
+        ))
+      )
+
+      , React.createElement('div', { className: "pt-regeln",}
+        , React.createElement('h3', { className: "pt-regeln-titel",}, "Drei Regeln, die fast immer reichen"     )
+        , React.createElement('ol', { className: "pt-regeln-liste",}
+          , React.createElement('li', null, "Die echte Domain steht direkt vor dem ersten „/“ – alles davor kann frei erfunden sein."               )
+          , React.createElement('li', null, "Passwörter, TANs und Ausweisdaten gehören in keine Antwortnachricht, egal wer fragt."          )
+          , React.createElement('li', null, "Im Zweifel den Absender über einen Kanal kontaktieren, den du schon vorher kanntest – nie über die Nummer oder den Link aus der Nachricht."                       )
+        )
+      )
+    )
+  );
+}
+
+function TabNotfall() {
+  const [offen, setOffen] = useState(NOTFALL[0].id);
+
+  return (
+    React.createElement(React.Fragment, null
+      , React.createElement('p', { className: "pt-notfall-intro",}, "Wenn schon etwas passiert ist, zählt vor allem eines: schnell handeln und es nicht mit sich allein ausmachen. Nichts davon ist peinlich, und keine dieser Situationen ist deine Schuld."
+
+
+      )
+
+      , React.createElement('ol', { className: "pt-grundregeln",}
+        , GRUNDREGELN.map((r, i) => (
+          React.createElement('li', { key: i,}, r)
+        ))
+      )
+
+      , React.createElement('div', { className: "pt-faelle",}
+        , NOTFALL.map((f) => {
+          const auf = offen === f.id;
+          return (
+            React.createElement('div', { key: f.id, className: `pt-fall ${auf ? "ist-offen" : ""}`,}
+              , React.createElement('button', {
+                className: "pt-fall-kopf",
+                'aria-expanded': auf,
+                onClick: () => setOffen(auf ? null : f.id),}
+
+                , React.createElement('span', { className: "pt-fall-titel",}, f.titel)
+                , React.createElement('span', { className: "pt-fall-pfeil", 'aria-hidden': "true",}, auf ? "−" : "+")
+              )
+
+              , auf && (
+                React.createElement('div', { className: "pt-fall-inhalt",}
+                  , React.createElement('p', { className: "pt-fall-wenn",}, f.wenn)
+
+                  , React.createElement('p', { className: "pt-fall-label ist-tun" ,}, "Das tust du jetzt"   )
+                  , React.createElement('ul', { className: "pt-fall-liste ist-tun" ,}
+                    , f.tun.map((s, i) => React.createElement('li', { key: i,}, s))
+                  )
+
+                  , React.createElement('p', { className: "pt-fall-label ist-nicht" ,}, "Das auf keinen Fall"   )
+                  , React.createElement('ul', { className: "pt-fall-liste ist-nicht" ,}
+                    , f.nicht.map((s, i) => React.createElement('li', { key: i,}, s))
+                  )
+
+                  , f.schluss && React.createElement('p', { className: "pt-fall-schluss",}, f.schluss)
+                )
+              )
+            )
+          );
+        })
+      )
+
+      , React.createElement('div', { className: "pt-regeln",}
+        , React.createElement('h3', { className: "pt-regeln-titel",}, "Anlaufstellen")
+        , React.createElement('ul', { className: "pt-hilfe",}
+          , HILFE.map((h) => (
+            React.createElement('li', { key: h.name, className: "pt-hilfe-eintrag",}
+              , React.createElement('span', { className: "pt-hilfe-kopf",}
+                , React.createElement('span', { className: "pt-hilfe-name",}, h.name)
+                , React.createElement('span', { className: "pt-hilfe-wert",}, h.wert)
+              )
+              , React.createElement('span', { className: "pt-hilfe-info",}, h.info)
+            )
+          ))
+        )
+        , React.createElement('p', { className: "pt-hilfe-fuss",}, "Angaben Stand August 2026. Vor der Abgabe kurz gegenprüfen – Beratungsangebote ändern sich."
+
+        )
+      )
+    )
+  );
+}
+
+function TabLecks() {
+  const [eingabe, setEingabe] = useState("");
+  const [ergebnis, setErgebnis] = useState(null);
+
+  function pruefen(adresse) {
+    const wert = (_nullishCoalesce(adresse, () => ( eingabe))).trim().toLowerCase();
+    if (!wert) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(wert)) {
+      setErgebnis({ art: "ungueltig" });
+      return;
+    }
+    const konto = DEMO_KONTEN.find((k) => k.adresse === wert);
+    if (!konto) {
+      setErgebnis({ art: "unbekannt" });
+      return;
+    }
+    setErgebnis({
+      art: "treffer",
+      hinweis: konto.hinweis,
+      lecks: konto.treffer.map((t) => DEMO_LECKS[t]),
+    });
+  }
+
+  const mitPasswort =
+    _nullishCoalesce(_optionalChain([ergebnis, 'optionalAccess', _ => _.lecks, 'optionalAccess', _2 => _2.some, 'call', _3 => _3((l) => l.daten.some((d) => d.toLowerCase().includes("passwort")))]), () => ( false));
+
+  return (
+    React.createElement(React.Fragment, null
+      , React.createElement('div', { className: "pt-sim-banner",}
+        , React.createElement('strong', null, "Simulation."), " Diese Prüfung fragt keinen echten Dienst ab. Sie vergleicht die Eingabe nur mit einer erfundenen Beispiel-Datenbank – lokal im Browser, ohne Netzwerkverbindung. Für eine echte Auskunft nutze die Dienste weiter unten."
+
+
+      )
+
+      , React.createElement('div', { className: "pt-suche",}
+        , React.createElement('input', {
+          className: "pt-suche-feld",
+          type: "email",
+          inputMode: "email",
+          placeholder: "adresse@beispiel.de",
+          value: eingabe,
+          onChange: (e) => setEingabe(e.target.value),
+          onKeyDown: (e) => e.key === "Enter" && pruefen(),
+          'aria-label': "E-Mail-Adresse für die Beispiel-Prüfung"   ,}
+        )
+        , React.createElement('button', { className: "pt-suche-knopf", onClick: () => pruefen(),}, "Prüfen")
+      )
+
+      , React.createElement('p', { className: "pt-demo-hinweis",}, "Zum Ausprobieren – gib hier keine echte Adresse ein:"        )
+      , React.createElement('div', { className: "pt-demo-knoepfe",}
+        , DEMO_KONTEN.map((k) => (
+          React.createElement('button', {
+            key: k.adresse,
+            className: "pt-demo-knopf",
+            onClick: () => { setEingabe(k.adresse); pruefen(k.adresse); },}
+
+            , k.adresse
+          )
+        ))
+      )
+
+      , _optionalChain([ergebnis, 'optionalAccess', _4 => _4.art]) === "ungueltig" && (
+        React.createElement('p', { className: "pt-ergebnis-leer",}, "Das sieht nicht nach einer E-Mail-Adresse aus."      )
+      )
+
+      , _optionalChain([ergebnis, 'optionalAccess', _5 => _5.art]) === "unbekannt" && (
+        React.createElement('p', { className: "pt-ergebnis-leer",}, "Diese Adresse steht nicht in der Beispiel-Datenbank. Das sagt nichts über die echte Welt aus – hier liegen nur die drei Demo-Adressen."
+
+
+        )
+      )
+
+      , _optionalChain([ergebnis, 'optionalAccess', _6 => _6.art]) === "treffer" && (
+        React.createElement('div', { className: "pt-ergebnis",}
+          , React.createElement('div', { className: `pt-ergebnis-kopf ${ergebnis.lecks.length ? "ist-treffer" : "ist-sauber"}`,}
+            , React.createElement('span', { className: "pt-ergebnis-zahl",}, ergebnis.lecks.length)
+            , React.createElement('span', { className: "pt-ergebnis-text",}
+              , ergebnis.lecks.length === 1 ? "Fund in der Beispiel-Datenbank" : "Funde in der Beispiel-Datenbank"
+            )
+          )
+
+          , React.createElement('p', { className: "pt-ergebnis-hinweis",}, ergebnis.hinweis)
+
+          , ergebnis.lecks.map((l) => (
+            React.createElement('div', { key: l.dienst, className: `pt-leck ist-${l.schwere}`,}
+              , React.createElement('div', { className: "pt-leck-kopf",}
+                , React.createElement('span', { className: "pt-leck-dienst",}, l.dienst)
+                , React.createElement('span', { className: "pt-leck-jahr",}, l.jahr)
+              )
+              , React.createElement('p', { className: "pt-leck-meta",}, l.konten, " betroffene Konten"  )
+              , React.createElement('div', { className: "pt-leck-daten",}
+                , l.daten.map((d) => (
+                  React.createElement('span', {
+                    key: d,
+                    className: `pt-leck-chip ${d.toLowerCase().includes("passwort") ? "ist-kritisch" : ""}`,}
+
+                    , d
+                  )
+                ))
+              )
+              , React.createElement('p', { className: "pt-leck-was",}, l.was)
+            )
+          ))
+
+          , mitPasswort && (
+            React.createElement('p', { className: "pt-leck-alarm",}, "Mindestens ein Leck enthält Passwörter. Das ist der Fall, bei dem es eilig ist."
+
+            )
+          )
+        )
+      )
+
+      , React.createElement('div', { className: "pt-regeln",}
+        , React.createElement('h3', { className: "pt-regeln-titel",}, "Was du bei einem echten Treffer tust"      )
+        , React.createElement('ol', { className: "pt-regeln-liste",}
+          , React.createElement('li', null, "Passwort des betroffenen Dienstes ändern – und überall dort, wo du dasselbe benutzt hast."             )
+          , React.createElement('li', null, "Zwei-Faktor-Authentifizierung einschalten, wo es sie gibt."     )
+          , React.createElement('li', null, "Für jeden Dienst ein eigenes Passwort, verwaltet in einem Passwortmanager."         )
+          , React.createElement('li', null, "Alte Konten, die du nicht mehr brauchst, löschen statt liegen lassen."          )
+          , React.createElement('li', null, "Mit gezielten Nachrichten rechnen: Wer deinen Namen, deinen Shop und dein Geburtsdatum kennt, schreibt sehr überzeugendes Spear-Phishing."                )
+        )
+      )
+
+      , React.createElement('div', { className: "pt-regeln",}
+        , React.createElement('h3', { className: "pt-regeln-titel",}, "Wie die echten Dienste arbeiten"    )
+        , React.createElement('ul', { className: "pt-technik",}
+          , React.createElement('li', null, React.createElement('strong', null, "Adress-Abgleich:"), " Die Dienste durchsuchen veröffentlichte Leaks und melden, in welchen davon eine Adresse auftaucht."             )
+          , React.createElement('li', null, React.createElement('strong', null, "Passwort-Prüfung ohne Passwort:"  ), " Have I Been Pwned nutzt k-Anonymität. Der Browser bildet einen SHA-1-Hash des Passworts und sendet nur dessen erste fünf Zeichen. Der Server antwortet mit allen passenden Endungen, verglichen wird lokal. Der Dienst erfährt das Passwort nie."                                    )
+          , React.createElement('li', null, React.createElement('strong', null, "Schutz vor Fremdabfragen:"  ), " Der Identity Leak Checker des HPI schickt das Ergebnis per Mail an die geprüfte Adresse. So kann niemand fremde Adressen ausspähen."                     )
+          , React.createElement('li', null, React.createElement('strong', null, "Kein Treffer heißt nicht sicher:"    ), " Erfasst sind nur bekannte, öffentlich gewordene Leaks. Vieles wird lange privat gehandelt, bevor es auftaucht."               )
+        )
+        , React.createElement('ul', { className: "pt-hilfe",}
+          , React.createElement('li', { className: "pt-hilfe-eintrag",}
+            , React.createElement('span', { className: "pt-hilfe-kopf",}
+              , React.createElement('span', { className: "pt-hilfe-name",}, "Have I Been Pwned"   )
+              , React.createElement('span', { className: "pt-hilfe-wert",}, "haveibeenpwned.com")
+            )
+            , React.createElement('span', { className: "pt-hilfe-info",}, "Größte öffentliche Sammlung, mit separatem Passwort-Check."     )
+          )
+          , React.createElement('li', { className: "pt-hilfe-eintrag",}
+            , React.createElement('span', { className: "pt-hilfe-kopf",}
+              , React.createElement('span', { className: "pt-hilfe-name",}, "HPI Identity Leak Checker"   )
+              , React.createElement('span', { className: "pt-hilfe-wert",}, "sec.hpi.de/ilc")
+            )
+            , React.createElement('span', { className: "pt-hilfe-info",}, "Kostenlos vom Hasso-Plattner-Institut, deutschsprachig, Ergebnis kommt per E-Mail."       )
+          )
+        )
+        , React.createElement('p', { className: "pt-hilfe-fuss",}, "Warum hier keine echte Abfrage läuft: Dafür bräuchte die App einen eigenen Server und einen kostenpflichtigen API-Schlüssel. Ein Schlüssel im Browser-Code wäre für jeden auslesbar."
+
+
+        )
+      )
+    )
+  );
+}
+
+/* ============================================================
+   Styles
+   ============================================================ */
+
+const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+.pt-root {
+  /* Von den Einstellungen gesetzt: --skala, --marker, --marker-tief */
+  --skala: 1;
+  --marker: #ffd84d;
+  --marker-tief: #8a6a00;
+
+  --tinte: #131a2b;
+  --papier: #fbfaf6;
+  --papier-rand: #e3e0d6;
+  --marker-gut: #66d9c0;
+  --signal: #ff5a5f;
+  --gut: #14a085;
+
+  /* Dunkles Thema (Standard) */
+  --bg: #0c1220;
+  --bg-glanz: #232f52;
+  --flaeche: #1b2540;
+  --text: #fbfaf6;
+  --text-weich: #c3cade;
+  --text-leise: #b8c0d6;
+  --nebel: #8d97b4;
+  --auf: 255,255,255;
+  --akzent-text: var(--marker);
+  --gut-text: var(--marker-gut);
+  --signal-text: #ffb3b5;
+
+  min-height: 100vh;
+  background:
+    radial-gradient(1100px 500px at 15% -10%, var(--bg-glanz) 0%, transparent 60%),
+    var(--bg);
+  color: var(--text);
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color .2s ease, color .2s ease;
+}
+
+.pt-root.ist-hell {
+  --bg: #eef0f5;
+  --bg-glanz: #dbe3f4;
+  --flaeche: #ffffff;
+  --text: #161d2e;
+  --text-weich: #3d4557;
+  --text-leise: #4d5568;
+  --nebel: #6b7390;
+  --auf: 19,26,43;
+  --papier: #ffffff;
+  --papier-rand: #d9d6cc;
+  --akzent-text: var(--marker-tief);
+  --gut-text: #0b7a66;
+  --signal-text: #b3262a;
+}
+.pt-root *, .pt-root *::before, .pt-root *::after { box-sizing: border-box; }
+
+/* Kopf */
+.pt-kopf {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 16px 20px;
+  border-bottom: 1px solid rgba(var(--auf), .08);
+}
+.pt-marke { display: flex; align-items: center; gap: 10px; }
+.pt-logo {
+  width: 14px; height: 14px; border-radius: 3px;
+  background: var(--marker);
+  box-shadow: 5px 5px 0 0 var(--signal);
+}
+.pt-markenname {
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+  font-size: calc(15px * var(--skala)); letter-spacing: -.01em;
+}
+.pt-kopf-rechts { display: flex; align-items: center; gap: 12px; }
+.pt-zaehler {
+  font-family: 'IBM Plex Mono', monospace; font-size: calc(12px * var(--skala)); color: var(--nebel);
+  display: flex; align-items: baseline; gap: 2px;
+}
+.pt-schraeg { opacity: .45; margin: 0 1px; }
+.pt-punkte { margin-left: 10px; color: var(--gut-text); }
+.pt-lexikon-knopf {
+  background: none; border: 1px solid rgba(var(--auf), .18); color: var(--text);
+  font-weight: 500; font-size: calc(12px * var(--skala)); font-family: 'IBM Plex Sans', sans-serif; padding: 8px 12px;
+  border-radius: 999px; cursor: pointer; transition: border-color .15s, background .15s;
+}
+.pt-lexikon-knopf:hover { border-color: var(--marker); background: color-mix(in srgb, var(--marker) 8%, transparent); }
+
+.pt-fortschritt { height: 2px; background: rgba(var(--auf), .08); }
+.pt-fortschritt-balken { height: 100%; background: var(--marker); transition: width .3s ease; }
+
+.pt-haupt { max-width: 640px; margin: 0 auto; padding: 28px 20px 64px; }
+
+/* Start */
+.pt-eyebrow {
+  font-family: 'IBM Plex Mono', monospace; font-size: calc(11px * var(--skala)); letter-spacing: .16em;
+  text-transform: uppercase; color: var(--akzent-text); margin: 0 0 14px;
+}
+.pt-titel {
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+  font-size: calc(clamp(30px, 8vw, 46px) * var(--skala)); line-height: 1.05; letter-spacing: -.03em; margin: 0 0 18px;
+}
+.pt-titel-akzent { color: var(--nebel); }
+.pt-lead { font-size: calc(15px * var(--skala)); line-height: 1.6; color: var(--text-weich); margin: 0 0 28px; max-width: 46ch; }
+
+.pt-stufen { display: grid; gap: 10px; }
+.pt-stufe {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+  width: 100%; text-align: left; padding: 15px 16px;
+  background: var(--flaeche); border: 1px solid rgba(var(--auf), .08);
+  border-radius: 12px; color: var(--text); cursor: pointer;
+  transition: transform .15s, border-color .15s;
+}
+.pt-stufe:hover { border-color: var(--marker); transform: translateX(3px); }
+.pt-stufe-label { font-family: 'Space Grotesk', sans-serif; font-weight: 500; font-size: calc(16px * var(--skala)); }
+.pt-stufe-info { font-size: calc(12.5px * var(--skala)); color: var(--nebel); }
+.pt-hinweis { margin-top: 22px; font-size: calc(12px * var(--skala)); color: var(--nebel); line-height: 1.5; }
+
+/* Kanal-Zeile */
+.pt-kanal-zeile { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.pt-kanal {
+  font-family: 'IBM Plex Mono', monospace; font-size: calc(11px * var(--skala)); letter-spacing: .12em;
+  text-transform: uppercase; color: var(--nebel);
+}
+.pt-stufe-tag {
+  font-family: 'IBM Plex Mono', monospace; font-size: calc(10.5px * var(--skala)); letter-spacing: .1em;
+  text-transform: uppercase; color: var(--tinte); background: var(--marker);
+  padding: 3px 7px; border-radius: 4px;
+}
+
+/* Nachrichtenkarte */
+.pt-karte {
+  position: relative; overflow: hidden;
+  background: var(--papier); color: var(--tinte);
+  border-radius: 14px; border: 1px solid var(--papier-rand);
+  box-shadow: 0 18px 40px -22px rgba(0,0,0,.8);
+}
+.pt-karte.ist-aufgedeckt::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--marker) 50%, transparent) 50%, transparent 100%);
+  animation: pt-scan .7s ease-out 1;
+}
+@keyframes pt-scan {
+  from { transform: translateY(-100%); }
+  to   { transform: translateY(100%); }
+}
+
+.pt-kopfzeilen { padding: 14px 16px; border-bottom: 1px solid var(--papier-rand); background: #f3f1ea; }
+.pt-kopfzeile { display: flex; gap: 10px; padding: 3px 0; font-size: calc(12.5px * var(--skala)); line-height: 1.45; }
+.pt-kopfzeile-label {
+  flex: 0 0 74px; font-family: 'IBM Plex Mono', monospace; font-size: calc(11px * var(--skala));
+  color: #7c7a70; text-transform: uppercase; letter-spacing: .06em; padding-top: 1px;
+}
+.pt-kopfzeile-wert { flex: 1; word-break: break-word; }
+.pt-kopfzeile-wert.ist-mono { font-family: 'IBM Plex Mono', monospace; font-size: calc(12px * var(--skala)); }
+
+.pt-mobil-kopf {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px; border-bottom: 1px solid var(--papier-rand); background: #f3f1ea;
+}
+.pt-mobil-avatar {
+  width: 30px; height: 30px; flex: 0 0 30px; border-radius: 50%;
+  background: var(--tinte); color: var(--papier);
+  display: grid; place-items: center;
+  font-family: 'Space Grotesk', sans-serif; font-size: calc(13px * var(--skala)); font-weight: 500;
+}
+.pt-mobil-name { flex: 1; font-size: calc(13.5px * var(--skala)); font-weight: 600; word-break: break-word; }
+.pt-mobil-zeit { font-family: 'IBM Plex Mono', monospace; font-size: calc(11px * var(--skala)); color: #7c7a70; }
+
+.pt-koerper {
+  padding: 18px 16px; font-size: calc(14.5px * var(--skala)); line-height: 1.65;
+  white-space: pre-wrap; word-break: break-word;
+}
+.pt-koerper--blase {
+  margin: 14px 16px 18px; padding: 13px 15px;
+  background: #eaf0f6; border-radius: 4px 16px 16px 16px;
+}
+
+/* Markierungen */
+.pt-mark {
+  position: relative; padding: 1px 2px; border-radius: 2px;
+  background: transparent; color: inherit;
+  box-shadow: inset 0 -.62em 0 0 color-mix(in srgb, var(--marker) 85%, transparent);
+  animation: pt-einblenden .35s ease both;
+}
+.pt-mark.ist-gut { box-shadow: inset 0 -.62em 0 0 color-mix(in srgb, var(--marker-gut) 70%, transparent); }
+.pt-mark-nr {
+  display: inline-block; margin-left: 4px; vertical-align: super;
+  font-family: 'IBM Plex Mono', monospace; font-size: calc(9.5px * var(--skala)); font-weight: 500;
+  background: var(--tinte); color: var(--papier);
+  min-width: 14px; height: 14px; line-height: 14px; text-align: center;
+  border-radius: 4px; padding: 0 3px;
+}
+@keyframes pt-einblenden { from { box-shadow: inset 0 0 0 0 color-mix(in srgb, var(--marker) 0%, transparent); } }
+
+/* Antwortknöpfe */
+.pt-wahl { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
+.pt-wahl-knopf {
+  padding: 17px 12px; border-radius: 12px; cursor: pointer;
+  font-family: 'Space Grotesk', sans-serif; font-weight: 500; font-size: calc(16px * var(--skala));
+  border: 1px solid rgba(var(--auf), .14); background: var(--flaeche); color: var(--text);
+  transition: background .15s, border-color .15s, transform .1s;
+}
+.pt-wahl-knopf:active { transform: scale(.985); }
+.pt-wahl-knopf--echt:hover { border-color: var(--gut); background: color-mix(in srgb, var(--gut) 16%, transparent); }
+.pt-wahl-knopf--phish:hover { border-color: var(--signal); background: color-mix(in srgb, var(--signal) 14%, transparent); }
+
+/* Feedback */
+.pt-feedback { margin-top: 18px; animation: pt-hoch .3s ease both; }
+@keyframes pt-hoch { from { opacity: 0; transform: translateY(8px); } }
+
+.pt-urteil {
+  padding: 13px 15px; border-radius: 10px; font-size: calc(14.5px * var(--skala)); line-height: 1.5;
+  border-left: 3px solid; margin-bottom: 22px;
+}
+.pt-urteil.ist-richtig { background: color-mix(in srgb, var(--gut) 13%, transparent); border-color: var(--gut); }
+.pt-urteil.ist-falsch { background: color-mix(in srgb, var(--signal) 12%, transparent); border-color: var(--signal); }
+.pt-urteil strong { font-family: 'Space Grotesk', sans-serif; }
+
+.pt-merkmale-titel {
+  font-family: 'IBM Plex Mono', monospace; font-size: calc(11px * var(--skala)); letter-spacing: .12em;
+  text-transform: uppercase; color: var(--nebel); margin: 0 0 12px;
+}
+.pt-merkmale { list-style: none; margin: 0 0 20px; padding: 0; display: grid; gap: 12px; }
+.pt-merkmal { display: flex; gap: 11px; }
+.pt-merkmal-nr {
+  flex: 0 0 20px; height: 20px; border-radius: 5px; margin-top: 2px;
+  display: grid; place-items: center;
+  font-family: 'IBM Plex Mono', monospace; font-size: calc(11px * var(--skala)); font-weight: 500; color: var(--tinte);
+}
+.pt-merkmal.ist-warnung .pt-merkmal-nr { background: var(--marker); }
+.pt-merkmal.ist-gut .pt-merkmal-nr { background: var(--marker-gut); }
+.pt-merkmal-inhalt { display: block; }
+.pt-merkmal-kat {
+  display: block; font-family: 'Space Grotesk', sans-serif; font-weight: 500;
+  font-size: calc(14px * var(--skala)); margin-bottom: 2px;
+}
+.pt-merkmal-text { display: block; font-size: calc(13.5px * var(--skala)); line-height: 1.55; color: var(--text-leise); }
+
+.pt-fazit {
+  font-size: calc(13.5px * var(--skala)); line-height: 1.6; color: var(--text-weich);
+  padding: 13px 15px; background: rgba(var(--auf), .045);
+  border-radius: 10px; margin: 0 0 20px;
+}
+
+.pt-weiter {
+  width: 100%; padding: 15px; border: none; border-radius: 12px; cursor: pointer;
+  background: var(--marker); color: var(--tinte);
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: calc(15px * var(--skala));
+  transition: filter .15s;
+}
+.pt-weiter:hover { filter: brightness(1.07); }
+.pt-sekundaer {
+  width: 100%; padding: 14px; cursor: pointer; border-radius: 12px;
+  background: none; border: 1px solid rgba(var(--auf), .16); color: var(--text);
+  font-weight: 500; font-size: calc(14px * var(--skala)); font-family: 'IBM Plex Sans', sans-serif;
+}
+.pt-sekundaer:hover { border-color: var(--nebel); }
+
+/* Auswertung */
+.pt-quote { display: flex; align-items: baseline; gap: 3px; }
+.pt-quote-zahl {
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+  font-size: calc(clamp(58px, 18vw, 92px) * var(--skala)); line-height: .95; letter-spacing: -.05em;
+}
+.pt-quote-prozent {
+  font-family: 'Space Grotesk', sans-serif; font-size: calc(24px * var(--skala)); color: var(--akzent-text);
+}
+.pt-quote-detail { font-size: calc(14px * var(--skala)); color: var(--text-weich); margin: 10px 0 30px; }
+
+.pt-ranking { list-style: none; margin: 0 0 22px; padding: 0; display: grid; gap: 11px; }
+.pt-ranking-zeile { display: flex; align-items: center; gap: 10px; font-size: calc(13px * var(--skala)); }
+.pt-ranking-kat { flex: 0 0 41%; line-height: 1.35; }
+.pt-ranking-balken { flex: 1; height: 7px; background: rgba(var(--auf), .09); border-radius: 4px; overflow: hidden; }
+.pt-ranking-fuellung { display: block; height: 100%; background: var(--signal); border-radius: 4px; }
+.pt-ranking-n { font-family: 'IBM Plex Mono', monospace; font-size: calc(11.5px * var(--skala)); color: var(--nebel); flex: 0 0 26px; text-align: right; }
+
+.pt-fehlalarm {
+  font-size: calc(13px * var(--skala)); line-height: 1.55; color: var(--text-weich);
+  border-left: 3px solid var(--nebel); padding: 4px 0 4px 12px; margin: 0 0 24px;
+}
+.pt-aktionen { display: grid; gap: 9px; }
+
+/* Lexikon */
+.pt-overlay {
+  position: fixed; inset: 0; z-index: 50; overflow-y: auto;
+  background: rgba(8,12,22,.86); backdrop-filter: blur(5px);
+  padding: 20px; animation: pt-einfaden .2s ease both;
+}
+@keyframes pt-einfaden { from { opacity: 0; } }
+.pt-overlay-inhalt {
+  max-width: 560px; margin: 0 auto; background: var(--flaeche);
+  border: 1px solid rgba(var(--auf), .1); border-radius: 16px; padding: 22px;
+}
+.pt-overlay-kopf { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 18px; }
+.pt-overlay-titel {
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: calc(20px * var(--skala));
+  letter-spacing: -.02em; margin: 0;
+}
+.pt-schliessen {
+  background: none; border: none; color: var(--nebel); font-size: calc(26px * var(--skala)); line-height: 1;
+  cursor: pointer; padding: 0 4px;
+}
+.pt-schliessen:hover { color: var(--text); }
+
+.pt-lexikon { list-style: none; margin: 0 0 24px; padding: 0; display: grid; gap: 13px; }
+.pt-lexikon-eintrag { border-left: 2px solid var(--marker); padding-left: 12px; }
+.pt-lexikon-name {
+  display: block; font-family: 'Space Grotesk', sans-serif; font-weight: 500; font-size: calc(14.5px * var(--skala));
+}
+.pt-lexikon-kurz { display: block; font-size: calc(13px * var(--skala)); line-height: 1.5; color: var(--text-leise); margin-top: 2px; }
+
+.pt-regeln { border-top: 1px solid rgba(var(--auf), .1); padding-top: 18px; }
+.pt-regeln-titel {
+  font-family: 'IBM Plex Mono', monospace; font-size: calc(11px * var(--skala)); letter-spacing: .12em;
+  text-transform: uppercase; color: var(--nebel); margin: 0 0 12px; font-weight: 400;
+}
+.pt-regeln-liste { margin: 0; padding-left: 18px; display: grid; gap: 9px; font-size: calc(13.5px * var(--skala)); line-height: 1.55; color: var(--text-weich); }
+
+/* Modus-Umschalter */
+.pt-modus-schalter {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+  padding: 5px; margin-bottom: 22px;
+  background: rgba(var(--auf), .05); border-radius: 13px;
+}
+.pt-modus {
+  display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
+  padding: 11px 13px; border: none; border-radius: 9px; cursor: pointer;
+  background: transparent; color: var(--nebel); text-align: left;
+  transition: background .15s, color .15s;
+}
+.pt-modus.ist-aktiv { background: var(--text); color: var(--bg); }
+.pt-modus-label { font-family: 'Space Grotesk', sans-serif; font-weight: 500; font-size: calc(14.5px * var(--skala)); }
+.pt-modus-unter { font-size: calc(11.5px * var(--skala)); line-height: 1.35; opacity: .8; }
+
+.pt-stufe { position: relative; padding-right: 44px; }
+.pt-stufe-n {
+  position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
+  font-family: 'IBM Plex Mono', monospace; font-size: calc(11.5px * var(--skala)); color: var(--nebel);
+}
+
+/* Link-Ansicht */
+.pt-kontext {
+  font-size: calc(13.5px * var(--skala)); line-height: 1.55; color: var(--text-weich);
+  background: rgba(var(--auf), .045); border-radius: 10px;
+  padding: 12px 14px; margin: 0 0 14px;
+}
+.pt-kontext-label {
+  display: block; font-family: 'IBM Plex Mono', monospace; font-size: calc(10.5px * var(--skala));
+  letter-spacing: .12em; text-transform: uppercase; color: var(--nebel); margin-bottom: 5px;
+}
+
+.pt-url-karte {
+  position: relative; overflow: hidden;
+  background: var(--papier); color: var(--tinte);
+  border-radius: 14px; border: 1px solid var(--papier-rand);
+  box-shadow: 0 18px 40px -22px rgba(0,0,0,.8);
+  padding: 20px 16px;
+}
+.pt-url-karte.ist-aufgedeckt::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--marker) 50%, transparent) 50%, transparent 100%);
+  animation: pt-scan .7s ease-out 1;
+}
+.pt-url {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: calc(clamp(14px, 4.2vw, 17px) * var(--skala)); line-height: 2;
+  word-break: break-all; user-select: all;
+}
+.pt-url-teil { padding: 2px 0; border-bottom: 3px solid transparent; }
+.pt-url-teil.ist-warnung { border-bottom-color: var(--marker); background: color-mix(in srgb, var(--marker) 28%, transparent); }
+.pt-url-teil.ist-gut { border-bottom-color: var(--marker-gut); background: color-mix(in srgb, var(--marker-gut) 24%, transparent); }
+.pt-url-teil.ist-domain { font-weight: 500; }
+.pt-url-nr {
+  display: inline-block; margin-left: 3px; vertical-align: super;
+  font-size: calc(9.5px * var(--skala)); font-weight: 500;
+  background: var(--tinte); color: var(--papier);
+  min-width: 14px; height: 14px; line-height: 14px; text-align: center;
+  border-radius: 4px; padding: 0 3px;
+}
+
+/* Zerlegungs-Tabelle */
+.pt-zerlegung { list-style: none; margin: 0 0 22px; padding: 0; display: grid; gap: 3px; }
+.pt-zerlegung-zeile {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 7px 10px; border-radius: 7px; background: rgba(var(--auf), .04);
+  border-left: 3px solid transparent;
+}
+.pt-zerlegung-zeile.ist-warnung { border-left-color: var(--marker); }
+.pt-zerlegung-zeile.ist-gut { border-left-color: var(--marker-gut); }
+.pt-zerlegung-zeile.ist-domain { background: rgba(var(--auf), .09); }
+.pt-zerlegung-rolle {
+  flex: 0 0 82px; font-family: 'IBM Plex Mono', monospace; font-size: calc(10.5px * var(--skala));
+  letter-spacing: .07em; text-transform: uppercase; color: var(--nebel);
+}
+.pt-zerlegung-wert {
+  flex: 1; font-family: 'IBM Plex Mono', monospace; font-size: calc(13px * var(--skala));
+  word-break: break-all; color: var(--text);
+}
+.pt-zerlegung-badge {
+  font-family: 'IBM Plex Mono', monospace; font-size: calc(9.5px * var(--skala)); letter-spacing: .08em;
+  text-transform: uppercase; color: var(--tinte); background: var(--marker);
+  padding: 3px 6px; border-radius: 4px; white-space: nowrap;
+}
+
+.pt-extras-hinweis {
+  font-size: calc(12px * var(--skala)); line-height: 1.5; color: var(--nebel);
+  margin: -8px 0 20px; padding-left: 31px;
+}
+
+/* Overlay-Tabs */
+.pt-overlay-tabs { display: flex; gap: 4px; padding: 4px; background: rgba(var(--auf), .06); border-radius: 10px; }
+.pt-overlay-tab {
+  padding: 8px 13px; border: none; border-radius: 7px; cursor: pointer;
+  background: transparent; color: var(--nebel);
+  font-family: 'Space Grotesk', sans-serif; font-weight: 500; font-size: calc(13.5px * var(--skala));
+  transition: background .15s, color .15s;
+}
+.pt-overlay-tab.ist-aktiv { background: var(--text); color: var(--bg); }
+.pt-lexikon-knopf.ist-notfall { border-color: color-mix(in srgb, var(--signal) 50%, transparent); }
+.pt-lexikon-knopf.ist-notfall:hover { border-color: var(--signal); background: color-mix(in srgb, var(--signal) 12%, transparent); }
+
+/* Notfall-Tab */
+.pt-notfall-intro { font-size: calc(13.5px * var(--skala)); line-height: 1.6; color: var(--text-weich); margin: 0 0 16px; }
+.pt-grundregeln {
+  margin: 0 0 22px; padding: 13px 15px 13px 32px; border-radius: 10px;
+  background: color-mix(in srgb, var(--marker) 10%, transparent); border-left: 3px solid var(--marker);
+  display: grid; gap: 6px; font-size: calc(13px * var(--skala)); line-height: 1.5; color: var(--text-weich);
+}
+
+.pt-faelle { display: grid; gap: 8px; margin-bottom: 24px; }
+.pt-fall { border: 1px solid rgba(var(--auf), .1); border-radius: 11px; overflow: hidden; }
+.pt-fall.ist-offen { border-color: rgba(var(--auf), .2); background: rgba(var(--auf), .04); }
+.pt-fall-kopf {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 13px 14px; background: none; border: none; cursor: pointer; color: var(--text); text-align: left;
+}
+.pt-fall-titel { font-family: 'Space Grotesk', sans-serif; font-weight: 500; font-size: calc(14.5px * var(--skala)); line-height: 1.35; }
+.pt-fall-pfeil { font-size: calc(18px * var(--skala)); color: var(--nebel); line-height: 1; flex: 0 0 auto; }
+.pt-fall-inhalt { padding: 0 14px 16px; animation: pt-hoch .25s ease both; }
+.pt-fall-wenn { font-size: calc(13px * var(--skala)); line-height: 1.5; color: var(--nebel); margin: 0 0 14px; }
+.pt-fall-label {
+  font-family: 'IBM Plex Mono', monospace; font-size: calc(10.5px * var(--skala)); letter-spacing: .12em;
+  text-transform: uppercase; margin: 0 0 7px;
+}
+.pt-fall-label.ist-tun { color: var(--gut-text); }
+.pt-fall-label.ist-nicht { color: var(--signal-text); margin-top: 16px; }
+.pt-fall-liste { margin: 0; padding-left: 17px; display: grid; gap: 6px; font-size: calc(13.5px * var(--skala)); line-height: 1.55; color: var(--text-weich); }
+.pt-fall-liste.ist-tun li::marker { color: var(--gut-text); }
+.pt-fall-liste.ist-nicht li::marker { color: var(--signal-text); }
+.pt-fall-schluss {
+  font-size: calc(13px * var(--skala)); line-height: 1.6; color: var(--text-weich); margin: 16px 0 0;
+  padding: 11px 13px; background: rgba(var(--auf), .05); border-radius: 9px;
+}
+
+/* Anlaufstellen */
+.pt-hilfe { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 11px; }
+.pt-hilfe-eintrag { border-left: 2px solid var(--marker-gut); padding-left: 12px; }
+.pt-hilfe-kopf { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.pt-hilfe-name { font-family: 'Space Grotesk', sans-serif; font-weight: 500; font-size: calc(14px * var(--skala)); }
+.pt-hilfe-wert {
+  font-family: 'IBM Plex Mono', monospace; font-size: calc(13px * var(--skala)); color: var(--akzent-text);
+  white-space: nowrap; user-select: all;
+}
+.pt-hilfe-info { display: block; font-size: calc(12.5px * var(--skala)); line-height: 1.5; color: var(--text-leise); margin-top: 2px; }
+.pt-hilfe-fuss { font-size: calc(11.5px * var(--skala)); line-height: 1.5; color: var(--nebel); margin: 0; }
+
+/* Datenleck-Tab */
+.pt-overlay-tabs { flex-wrap: wrap; }
+.pt-sim-banner {
+  font-size: calc(13px * var(--skala)); line-height: 1.55; color: var(--text-weich);
+  background: color-mix(in srgb, var(--marker) 10%, transparent); border-left: 3px solid var(--marker);
+  border-radius: 10px; padding: 12px 14px; margin-bottom: 18px;
+}
+.pt-sim-banner strong { font-family: 'Space Grotesk', sans-serif; color: var(--marker); }
+
+.pt-suche { display: flex; gap: 8px; margin-bottom: 14px; }
+.pt-suche-feld {
+  flex: 1; min-width: 0; padding: 12px 13px; border-radius: 10px;
+  background: rgba(var(--auf), .06); border: 1px solid rgba(var(--auf), .14);
+  color: var(--text); font-weight: 400; font-size: calc(14px * var(--skala)); font-family: 'IBM Plex Mono', monospace;
+}
+.pt-suche-feld::placeholder { color: rgba(141,151,180,.7); }
+.pt-suche-feld:focus { outline: none; border-color: var(--marker); }
+.pt-suche-knopf {
+  padding: 12px 17px; border: none; border-radius: 10px; cursor: pointer;
+  background: var(--marker); color: var(--tinte);
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: calc(14px * var(--skala));
+}
+.pt-suche-knopf:hover { filter: brightness(1.07); }
+
+.pt-demo-hinweis { font-size: calc(12px * var(--skala)); color: var(--nebel); margin: 0 0 8px; }
+.pt-demo-knoepfe { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 20px; }
+.pt-demo-knopf {
+  padding: 7px 10px; border-radius: 7px; cursor: pointer;
+  background: rgba(var(--auf), .05); border: 1px solid rgba(var(--auf), .12);
+  color: var(--text-weich); font-weight: 400; font-size: calc(11.5px * var(--skala)); font-family: 'IBM Plex Mono', monospace;
+}
+.pt-demo-knopf:hover { border-color: var(--nebel); color: var(--text); }
+
+.pt-ergebnis-leer {
+  font-size: calc(13px * var(--skala)); line-height: 1.55; color: var(--text-weich);
+  padding: 13px 15px; background: rgba(var(--auf), .045); border-radius: 10px; margin: 0 0 22px;
+}
+.pt-ergebnis { margin-bottom: 24px; animation: pt-hoch .3s ease both; }
+.pt-ergebnis-kopf { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.pt-ergebnis-zahl {
+  font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: calc(38px * var(--skala));
+  line-height: 1; letter-spacing: -.03em;
+}
+.pt-ergebnis-kopf.ist-treffer .pt-ergebnis-zahl { color: var(--signal); }
+.pt-ergebnis-kopf.ist-sauber .pt-ergebnis-zahl { color: var(--marker-gut); }
+.pt-ergebnis-text { font-size: calc(13.5px * var(--skala)); color: var(--text-weich); }
+.pt-ergebnis-hinweis { font-size: calc(13px * var(--skala)); line-height: 1.55; color: var(--nebel); margin: 0 0 14px; }
+
+.pt-leck {
+  border: 1px solid rgba(var(--auf), .1); border-left-width: 3px;
+  border-radius: 10px; padding: 13px 14px; margin-bottom: 9px;
+}
+.pt-leck.ist-hoch { border-left-color: var(--signal); }
+.pt-leck.ist-mittel { border-left-color: var(--marker); }
+.pt-leck.ist-niedrig { border-left-color: var(--nebel); }
+.pt-leck-kopf { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.pt-leck-dienst { font-family: 'Space Grotesk', sans-serif; font-weight: 500; font-size: calc(15px * var(--skala)); }
+.pt-leck-jahr { font-family: 'IBM Plex Mono', monospace; font-size: calc(12px * var(--skala)); color: var(--nebel); }
+.pt-leck-meta { font-size: calc(12px * var(--skala)); color: var(--nebel); margin: 2px 0 10px; }
+.pt-leck-daten { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+.pt-leck-chip {
+  font-family: 'IBM Plex Mono', monospace; font-size: calc(11px * var(--skala));
+  padding: 4px 8px; border-radius: 5px;
+  background: rgba(var(--auf), .07); color: var(--text-weich);
+}
+.pt-leck-chip.ist-kritisch { background: color-mix(in srgb, var(--signal) 18%, transparent); color: var(--signal-text); }
+.pt-leck-was { font-size: calc(13px * var(--skala)); line-height: 1.55; color: var(--text-leise); margin: 0; }
+.pt-leck-alarm {
+  font-size: calc(13px * var(--skala)); line-height: 1.55; color: var(--signal-text); margin: 14px 0 0;
+  padding: 11px 13px; background: color-mix(in srgb, var(--signal) 12%, transparent);
+  border-left: 3px solid var(--signal); border-radius: 9px;
+}
+
+.pt-technik {
+  list-style: none; margin: 0 0 18px; padding: 0;
+  display: grid; gap: 11px; font-size: calc(13px * var(--skala)); line-height: 1.55; color: var(--text-weich);
+}
+.pt-technik strong { font-family: 'Space Grotesk', sans-serif; font-weight: 500; color: var(--text); }
+
+/* Einstellungen */
+.pt-zahnrad {
+  display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 34px;
+  border-radius: 999px; cursor: pointer; color: var(--text);
+  background: none; border: 1px solid rgba(var(--auf), .18);
+  transition: border-color .15s, background .15s, transform .2s;
+}
+.pt-zahnrad:hover {
+  border-color: var(--marker);
+  background: color-mix(in srgb, var(--marker) 10%, transparent);
+  transform: rotate(35deg);
+}
+
+.pt-overlay-inhalt.ist-schmal { max-width: 420px; }
+
+.pt-feld-titel {
+  font-family: 'IBM Plex Mono', monospace; font-size: calc(10.5px * var(--skala));
+  letter-spacing: .12em; text-transform: uppercase; color: var(--nebel);
+  margin: 0 0 9px;
+}
+
+.pt-segment {
+  display: flex; flex-wrap: wrap; gap: 5px; padding: 5px; margin-bottom: 22px;
+  background: rgba(var(--auf), .06); border-radius: 11px;
+}
+.pt-segment-knopf {
+  flex: 1 1 auto; padding: 10px 8px; border: none; border-radius: 8px; cursor: pointer;
+  background: transparent; color: var(--nebel); white-space: nowrap;
+  font-family: 'Space Grotesk', sans-serif; font-weight: 500;
+  font-size: calc(13px * var(--skala));
+  transition: background .15s, color .15s;
+}
+.pt-segment-knopf.ist-aktiv { background: var(--text); color: var(--bg); }
+
+.pt-farben { display: flex; gap: 10px; margin-bottom: 22px; }
+.pt-farbe {
+  width: 38px; height: 38px; border-radius: 999px; cursor: pointer; padding: 0;
+  background: var(--probe); border: 2px solid transparent;
+  box-shadow: 0 0 0 1px rgba(var(--auf), .14) inset;
+  transition: transform .15s, box-shadow .15s;
+}
+.pt-farbe:hover { transform: scale(1.07); }
+.pt-farbe.ist-aktiv {
+  border-color: var(--bg);
+  box-shadow: 0 0 0 2px var(--text);
+}
+
+.pt-probe {
+  background: var(--papier); color: var(--tinte);
+  border: 1px solid var(--papier-rand); border-radius: 12px;
+  padding: 14px; margin-bottom: 16px;
+}
+.pt-probe-label {
+  font-family: 'IBM Plex Mono', monospace; font-size: calc(10px * var(--skala));
+  letter-spacing: .12em; text-transform: uppercase; color: #7c7a70; margin: 0 0 7px;
+}
+.pt-probe-text { margin: 0; font-size: calc(14px * var(--skala)); line-height: 1.6; }
+
+.pt-root :focus-visible { outline: 2px solid var(--marker); outline-offset: 2px; }
+
+@media (max-width: 400px) {
+  .pt-kopfzeile { flex-direction: column; gap: 1px; }
+  .pt-kopfzeile-label { flex: none; }
+  .pt-ranking-kat { flex: 0 0 46%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pt-root *, .pt-root *::before, .pt-root *::after {
+    animation: none !important; transition: none !important;
+  }
+}
+`;
+
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(PhishingTrainer));
+
+</script>
+</body>
+</html>
